@@ -14,6 +14,12 @@ if TYPE_CHECKING:
 class ArloDoorbell(ArloCamera, BinarySensor):
     def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, provider=provider)
+
+        try:
+            self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, self.provider.arlo_public_key))
+        except:
+            self.logger.exception("err")
+
         self.start_doorbell_subscription()
 
     def start_doorbell_subscription(self) -> None:

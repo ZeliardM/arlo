@@ -55,6 +55,7 @@ class ArloSirenVirtualSecuritySystem(ArloDeviceBase, SecuritySystem, Settings, R
                 return
 
             try:
+                await asyncio.sleep(0.1)
                 self.securitySystemState = {
                     "supportedModes": ArloSirenVirtualSecuritySystem.SUPPORTED_MODES,
                     "mode": self.mode,

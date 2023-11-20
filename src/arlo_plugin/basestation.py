@@ -24,6 +24,11 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     def __init__(self, nativeId: str, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
 
+        try:
+            self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, self.provider.arlo_public_key))
+        except:
+            self.logger.exception("err")
+
     @property
     def has_siren(self) -> bool:
         return any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloBasestation.MODELS_WITH_SIRENS])

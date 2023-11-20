@@ -98,9 +98,10 @@ class Arlo(object):
 
     random.shuffle(BACKUP_AUTH_HOSTS)
 
-    def __init__(self, username, password):
+    def __init__(self, username: str, password: str, device_id: str):
         self.username = username
         self.password = password
+        self.device_id = device_id
         self.event_stream = None
         self.request = None
         self.logged_in = False
@@ -158,7 +159,6 @@ class Arlo(object):
         self.logged_in = True
 
     def LoginMFA(self):
-        device_id = str(uuid.uuid4())
         headers = {
             'DNT': '1',
             'schemaVersion': '1',
@@ -168,7 +168,7 @@ class Arlo(object):
             'Referer': f'https://{self.BASE_URL}/',
             'Source': 'arloCamWeb',
             'TE': 'Trailers',
-            'x-user-device-id': device_id,
+            'x-user-device-id': self.device_id,
             'x-user-device-automation-name': 'QlJPV1NFUg==',
             'x-user-device-type': 'BROWSER',
             'Host': self.AUTH_URL,
@@ -1082,33 +1082,37 @@ class Arlo(object):
                 locationList[locations[f'{location}'][locationId]['locationId']] = locations[f'{location}'][locationId]['locationName']
         return locationList
 
-    def GetCurrentMode(self, location: str) -> str:
+    def GetCurrentMode(self, location: str, one_location: bool) -> str:
         currentmode = self._getCurrentMode_NextRevision()
-        return currentmode[f'{location}']['properties']['mode']
+        if one_location:
+            return currentmode['properties']['mode']
+        else:
+            return currentmode[f'{location}']['properties']['mode']
 
-    def GetNextRevision(self, location: str) -> str:
+    def GetNextRevision(self, location: str, one_location: bool) -> str:
         nextRevision = self._getCurrentMode_NextRevision()
-        return nextRevision[f'{location}']['revision']
+        if one_location:
+            return nextRevision['revision']
+        else:
+            return nextRevision[f'{location}']['revision']
 
     def _getLocations(self) -> dict:
         return self.request.get(f'https://{self.BASE_URL}/hmsdevicemanagement/users/{self.user_id}/locations')
 
     def _getCurrentMode_NextRevision(self) -> dict:
-        device_id = str(uuid.uuid4())
         headers = {
             'Origin': f'https://{self.BASE_URL}',
             'Referer': f'https://{self.BASE_URL}/',
-            'x-user-device-id': device_id,
+            'x-user-device-id': self.device_id,
             'x-forwarded-user': self.user_id,
         }
         return self.request.get(f'https://{self.BASE_URL}/hmsweb/automation/v3/activeMode?locationId=all', headers=headers)
 
     def SetMode(self, setmode, location, nextrevision) -> None:
-        device_id = str(uuid.uuid4())
         headers = {
             'Origin': f'https://{self.BASE_URL}',
             'Referer': f'https://{self.BASE_URL}/',
-            'x-user-device-id': device_id,
+            'x-user-device-id': self.device_id,
             'x-forwarded-user': self.user_id,
         }
         params = {
@@ -1174,3 +1178,19 @@ class Arlo(object):
     @cached(cache=TTLCache(maxsize=1, ttl=60))
     def _getSmartFeaturesCached(self) -> dict:
         return self.request.get(f'https://{self.BASE_URL}/hmsweb/users/subscription/smart/features')
+
+    def CreateCertificate(self, basestation, public_key):
+        headers = {
+                'Origin': f'https://{self.BASE_URL}',
+                'Referer': f'https://{self.BASE_URL}/',
+                'x-user-device-id': self.device_id,
+                'x-forwarded-user': self.user_id,
+        }
+        params={
+                'uuid': self.device_id,
+                'publicKey': public_key,
+                'uniqueIds': [
+                    basestation['uniqueId']
+                ],
+        }
+        return self.request.post(f'https://{self.BASE_URL}/hmsweb/users/devices/v2/security/cert/create', params=params, headers=headers)

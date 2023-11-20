@@ -151,6 +151,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
 
     def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, provider=provider)
+
+        try:
+            if self.has_local_live_streaming:
+                self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, self.provider.arlo_public_key))
+        except:
+            self.logger.exception("err")
+
         self.picture_lock = asyncio.Lock()
 
         self.start_error_subscription()
@@ -180,6 +187,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
                 return
 
             try:
+                await asyncio.sleep(0.1)
                 self.chargeState = ChargeState.Charging.value if self.wired_to_power else ChargeState.NotCharging.value
                 return
             except Exception as e:
@@ -415,6 +423,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             return True
         else:
             return "SIPStreaming" in self.arlo_capabilities.get("Capabilities", {}).get("Streaming", {})
+
+    @property
+    def has_local_live_streaming(self) -> bool:
+        return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("localLiveStreaming", False)
 
     async def getSettings(self) -> List[Setting]:
         result = []
