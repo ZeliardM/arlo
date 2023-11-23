@@ -852,6 +852,12 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                     self.logger.info(f"Skipping security mode security system {nativeId} (Arlo Security Mode Security System - {locations[location]}) as it has already been added.")
                     continue
 
+                if nativeId in self.hidden_device_ids:
+                    self.logger.info(f"Skipping security mode security system {nativeId} (Arlo Security Mode Security System - {locations[location]}) because it is hidden.")
+                    continue
+
+                device = await self.getDevice_impl(nativeId)
+                scrypted_interfaces = device.get_applicable_interfaces()
                 manifest = {
                     "info": {
                         "model": "Arlo Security Mode Security System",
@@ -865,15 +871,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                     "type": device.get_device_type(),
                     "providerNativeId": None,
                 }
-
-                self.arlo_smss[nativeId] = manifest
-
-                if nativeId in self.hidden_device_ids:
-                    self.logger.info(f"Skipping security mode security system {nativeId} (Arlo Security Mode Security System - {locations[location]}) because it is hidden.")
-                    continue
-
-                device = await self.getDevice_impl(nativeId)
-                scrypted_interfaces = device.get_applicable_interfaces()
+                self.arlo_smss[nativeId] = ""
                 self.logger.debug(f"Interfaces for {nativeId}: {scrypted_interfaces}")
 
                 # we want to add the security mode security system as a top level device
