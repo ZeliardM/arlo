@@ -26,7 +26,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
         try:
             if self.has_local_live_streaming:
-                self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
+                self.logger.debug(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
         except:
             self.logger.exception("err")
 

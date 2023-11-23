@@ -102,10 +102,6 @@ class ArloCameraIntercomSession(BackgroundTaskMixin):
 
 class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, VideoClips, MotionSensor, AudioSensor, Battery, Charger):
     MODELS_WITH_SPOTLIGHTS = [
-        "avd1001",
-        "avd2001",
-        "avd3001",
-        "avd4001",
         "vmc2030",
         "vmc2032",
         "vmc2050",
@@ -129,10 +125,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
     ]
 
     MODELS_WITH_SIRENS = [
-        "avd1001",
-        "avd2001",
-        "avd3001",
-        "avd4001",
         "fb1001",
         "vmc2020",
         "vmc2030",
@@ -217,7 +209,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
 
         try:
             if self.has_local_live_streaming:
-                self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
+                self.logger.debug(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
         except:
             self.logger.exception("err")
 
