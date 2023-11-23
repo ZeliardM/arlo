@@ -109,7 +109,7 @@ class ArloSecurityModeSecuritySystem(ArloDeviceBase, SecuritySystem, Settings, R
         if key != "mode":
             raise ValueError(f"invalid setting {key}")
 
-        self.logger.info(f'Setting {self["name"]} Security Mode to {value}')
+        self.logger.info(f'Setting {self.arlo_device["name"]} Security Mode to {value}')
 
         if value == SecuritySystemMode.AwayArmed.value:
             setmode: SecuritySystemMode = "armAway"
@@ -142,7 +142,7 @@ Making changes to this device will perform changes to Arlo cloud and your Arlo a
 
     @async_print_exception_guard
     async def armSecuritySystem(self, mode: SecuritySystemMode) -> None:
-        self.logger.info(f'Setting {self["name"]} Security Mode to {mode}')
+        self.logger.info(f'Setting {self.arlo_device["name"]} Security Mode to {mode}')
 
         if mode == SecuritySystemMode.AwayArmed.value:
             setmode: SecuritySystemMode = "armAway"
@@ -164,7 +164,7 @@ Making changes to this device will perform changes to Arlo cloud and your Arlo a
 
     @async_print_exception_guard
     async def disarmSecuritySystem(self) -> None:
-        self.logger.info(f'Setting {self["name"]} Security Mode to {SecuritySystemMode.Disarmed.value}')
+        self.logger.info(f'Setting {self.arlo_device["name"]} Security Mode to {SecuritySystemMode.Disarmed.value}')
 
         setmode: SecuritySystemMode = "standby"
 

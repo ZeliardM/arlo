@@ -52,9 +52,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         super().__init__(nativeId=nativeId)
         self.logger_name = "Provider"
 
-        self.storage.setItem("arlo_private_key", None)
-        self.storage.setItem("arlo_public_key", None)
-
         self.arlo_cameras = {}
         self.arlo_basestations = {}
         self.arlo_smss = {}

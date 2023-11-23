@@ -28,13 +28,13 @@ class ArloSpotlight(ArloDeviceBase, OnOff):
 
     @async_print_exception_guard
     async def turnOn(self) -> None:
-        self.logger.info("Turning on")
+        self.logger.info(f'Turning {self.arlo_device["name"]} on')
         self.provider.arlo.SpotlightOn(self.arlo_basestation, self.arlo_device)
         self.on = True
 
     @async_print_exception_guard
     async def turnOff(self) -> None:
-        self.logger.info("Turning off")
+        self.logger.info(f'Turning {self.arlo_device["name"]} off')
         self.provider.arlo.SpotlightOff(self.arlo_basestation, self.arlo_device)
         self.on = False
 
@@ -43,13 +43,13 @@ class ArloFloodlight(ArloSpotlight):
 
     @async_print_exception_guard
     async def turnOn(self) -> None:
-        self.logger.info("Turning on")
+        self.logger.info(f'Turning {self.arlo_device["name"]} on')
         self.provider.arlo.FloodlightOn(self.arlo_basestation, self.arlo_device)
         self.on = True
 
     @async_print_exception_guard
     async def turnOff(self) -> None:
-        self.logger.info("Turning off")
+        self.logger.info(f'Turning {self.arlo_device["name"]} off')
         self.provider.arlo.FloodlightOff(self.arlo_basestation, self.arlo_device)
         self.on = False
 
@@ -61,12 +61,12 @@ class ArloNightlight(ArloSpotlight):
 
     @async_print_exception_guard
     async def turnOn(self) -> None:
-        self.logger.info("Turning on")
+        self.logger.info(f'Turning {self.arlo_device["name"]} on')
         self.provider.arlo.NightlightOn(self.arlo_device)
         self.on = True
 
     @async_print_exception_guard
     async def turnOff(self) -> None:
-        self.logger.info("Turning off")
+        self.logger.info(f'Turning {self.arlo_device["name"]} off')
         self.provider.arlo.NightlightOff(self.arlo_device)
         self.on = False

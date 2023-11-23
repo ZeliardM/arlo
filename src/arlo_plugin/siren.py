@@ -29,7 +29,7 @@ class ArloSiren(ArloDeviceBase, OnOff):
     @async_print_exception_guard
     async def turnOn(self) -> None:
         from .basestation import ArloBasestation
-        self.logger.info(f'Turning {self["name"]} on')
+        self.logger.info(f'Turning {self.arlo_device["name"]} on')
 
         if self.vss.securitySystemState["mode"] == SecuritySystemMode.Disarmed.value:
             self.logger.info(f'{self.vss.arlo_device["name"]} is disarmed, ignoring trigger')
@@ -60,7 +60,7 @@ class ArloSiren(ArloDeviceBase, OnOff):
     @async_print_exception_guard
     async def turnOff(self) -> None:
         from .basestation import ArloBasestation
-        self.logger.info(f'Turning {self["name"]} off')
+        self.logger.info(f'Turning {self.arlo_device["name"]} off')
         if isinstance(self.vss.parent, ArloBasestation):
             self.provider.arlo.SirenOff(self.arlo_basestation)
         else:

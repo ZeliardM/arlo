@@ -25,13 +25,18 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
 
         try:
-            self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
+            if self.has_local_live_streaming:
+                self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
         except:
             self.logger.exception("err")
 
     @property
     def has_siren(self) -> bool:
         return any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloBasestation.MODELS_WITH_SIRENS])
+
+    @property
+    def has_local_live_streaming(self) -> bool:
+        return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("localLiveStreaming", False)
 
     def get_applicable_interfaces(self) -> List[str]:
         return [
