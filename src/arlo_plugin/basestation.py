@@ -36,7 +36,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("localLiveStreaming", False)
+        return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("sipLiveStream", False)
 
     def get_applicable_interfaces(self) -> List[str]:
         return [
