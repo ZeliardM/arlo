@@ -137,7 +137,7 @@ If this virtual security system is synced to Homekit, the siren device will be m
 
     @async_print_exception_guard
     async def armSecuritySystem(self, mode: SecuritySystemMode) -> None:
-        self.logger.info(f'Setting {self.arlo_device["name"]} Mode to {mode}')
+        self.logger.info(f'Setting Mode to {mode}')
         self.mode = mode
         self.securitySystemState = {
             **self.securitySystemState,
@@ -148,7 +148,7 @@ If this virtual security system is synced to Homekit, the siren device will be m
 
     @async_print_exception_guard
     async def disarmSecuritySystem(self) -> None:
-        self.logger.info(f'Setting {self.arlo_device["name"]} Mode to {SecuritySystemMode.Disarmed.value}')
+        self.logger.info(f'Setting Mode to {SecuritySystemMode.Disarmed.value}')
         self.mode = SecuritySystemMode.Disarmed.value
         self.securitySystemState = {
             **self.securitySystemState,

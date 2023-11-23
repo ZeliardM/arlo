@@ -873,7 +873,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                     "type": device.get_device_type(),
                     "providerNativeId": None,
                 }
-                self.arlo_smss[nativeId] = manifest
                 self.logger.debug(f"Interfaces for {nativeId}: {scrypted_interfaces}")
 
                 # we want to add the security mode security system as a top level device
