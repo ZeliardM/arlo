@@ -25,7 +25,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
 
         try:
-            self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, self.provider.arlo_public_key))
+            self.logger.info(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
         except:
             self.logger.exception("err")
 

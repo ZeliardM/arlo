@@ -52,6 +52,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         super().__init__(nativeId=nativeId)
         self.logger_name = "Provider"
 
+        self.storage.setItem("arlo_private_key", None)
+        self.storage.setItem("arlo_public_key", None)
+
         self.arlo_cameras = {}
         self.arlo_basestations = {}
         self.arlo_smss = {}
@@ -97,14 +100,16 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
     def arlo_public_key(self) -> str:
         public_key = self.storage.getItem("arlo_public_key")
         if public_key is None:
-            public_key,_ = self._gen_arlo_keypair()
+            public_key, _ =  self._gen_arlo_keypair()
+            self.storage.setItem("arlo_public_key", public_key)
         return public_key
 
     @property
     def arlo_private_key(self) -> str:
         private_key = self.storage.getItem("arlo_private_key")
         if private_key is None:
-            private_key,_ = self._gen_arlo_keypair()
+            _, private_key = self._gen_arlo_keypair()
+            self.storage.setItem("arlo_private_key", private_key)
         return private_key
 
     def _gen_arlo_keypair(self) -> tuple:
@@ -253,11 +258,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
         self.logger.info("Trying to initialize Arlo client...")
         try:
-            # ensure keypair is generated
-            _, _ = self.arlo_public_key, self.arlo_private_key
-            self.logger.info(self.arlo_public_key)
-            self.logger.info(self.arlo_private_key)
-
             self._arlo = Arlo(self.arlo_username, self.arlo_password, self.arlo_device_id)
             headers = self.arlo_auth_headers
             if headers:
