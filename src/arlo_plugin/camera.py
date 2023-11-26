@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import asyncio
 import aiohttp
 from async_timeout import timeout as async_timeout
@@ -191,6 +192,8 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
         "vmc2030b",
     ]
 
+    FILE_STORAGE = os.path.join(os.environ['SCRYPTED_PLUGIN_VOLUME'], 'zip', 'unzipped', 'fs')
+
     timeout: int = 30
     intercom_session: ArloCameraIntercomSession = None
     light: ArloSpotlight = None
@@ -208,12 +211,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
     def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, provider=provider)
 
-        try:
-            if self.has_local_live_streaming:
-                self.logger.debug(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
-        except:
-            self.logger.exception("err")
-
         self.picture_lock = asyncio.Lock()
 
         self.info_logger = LoggerServer(self, self.logger.info)
@@ -224,6 +221,36 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
         self.start_audio_subscription()
         self.start_battery_subscription()
         self.create_task(self.delayed_init())
+
+    def getCertificates(self, certificateName: str) -> str:
+        file = open(f'{ArloCamera.FILE_STORAGE}/{certificateName}.cer', "r")
+        cert = file.read()
+        file.close()
+        return cert
+
+    @property
+    def peerCert(self) -> None:
+        peerCert = self.storage.getItem("peerCert")
+        if peerCert is None:
+            peerCert = self.getCertificates("peerCert")
+            self.storage.setItem("peerCert", peerCert)
+        return peerCert
+
+    @property
+    def deviceCert(self) -> None:
+        deviceCert = self.storage.getItem("deviceCert")
+        if deviceCert is None:
+            deviceCert = self.getCertificates("deviceCert")
+            self.storage.setItem("deviceCert", deviceCert)
+        return deviceCert
+
+    @property
+    def icaCert(self) -> None:
+        icaCert = self.storage.getItem("icaCert")
+        if icaCert is None:
+            icaCert = self.getCertificates("icaCert")
+            self.storage.setItem("icaCert", icaCert)
+        return icaCert
 
     async def delayed_init(self) -> None:
         if not self.has_battery:

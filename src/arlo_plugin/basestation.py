@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from typing import List, TYPE_CHECKING
 
 from scrypted_sdk import ScryptedDeviceBase
@@ -19,16 +21,36 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         "vmb4500"
     ]
 
+    FILE_STORAGE = os.path.join(os.environ['SCRYPTED_PLUGIN_VOLUME'], 'zip', 'unzipped', 'fs')
+
     vss: ArloSirenVirtualSecuritySystem = None
 
     def __init__(self, nativeId: str, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
 
-        try:
-            if self.has_local_live_streaming:
-                self.logger.debug(self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines())))
-        except:
-            self.logger.exception("err")
+        if self.has_local_live_streaming and not any(filename.endswith('.cer') for filename in os.listdir(ArloBasestation.FILE_STORAGE)):
+            self.createCertificates()
+
+    def createCertificates(self) -> None:
+        certificates = self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines()))
+        self.parseCertificates(certificates)
+
+    def parseCertificates(self, certificates: dict) -> None:
+        peerCert = certificates['certsData'][0]['peerCert']
+        deviceCert = certificates['certsData'][0]['deviceCert']
+        icaCert = certificates['icaCert']
+        self.storeCertificates(peerCert, deviceCert, icaCert)
+
+    def storeCertificates(self, peerCert: str, deviceCert: str, icaCert: str) -> None:
+        peer = open(f'{ArloBasestation.FILE_STORAGE}/peerCert.cer', "x")
+        peer.write(f'-----BEGIN CERTIFICATE-----\n{peerCert}\n-----END CERTIFICATE-----')
+        peer.close()
+        device = open(f'{ArloBasestation.FILE_STORAGE}/deviceCert.cer', "x")
+        device.write(f'-----BEGIN CERTIFICATE-----\n{deviceCert}\n-----END CERTIFICATE-----')
+        device.close()
+        ica = open(f'{ArloBasestation.FILE_STORAGE}/icaCert.cer', "x")
+        ica.write(f'-----BEGIN CERTIFICATE-----\n{icaCert}\n-----END CERTIFICATE-----')
+        ica.close()
 
     @property
     def has_siren(self) -> bool:
@@ -36,7 +58,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("sipLiveStream", False)
+        return self.provider.arlo.GetDeviceCapabilities(self.arlo_device).get("Capabilities", {}).get("sipLiveStream", False)
 
     def get_applicable_interfaces(self) -> List[str]:
         return [
