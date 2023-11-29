@@ -786,7 +786,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
     async def getVideoStream(self, options: RequestMediaStreamOptions = {}) -> MediaObject:
         self.logger.debug("Entered getVideoStream")
 
-        if self.use_sip_webrtc_streaming:
+        if self.use_sip_webrtc_streaming and not self.use_separate_recording_stream:
             raise Exception("direct video stream urls are not available when SIP WebRTC is enabled")
 
         mso = await self.getVideoStreamOptions(id=options.get("id", "default"))
