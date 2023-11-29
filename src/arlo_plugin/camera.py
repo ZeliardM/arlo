@@ -410,6 +410,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             return False
 
     @property
+    def use_separate_recording_stream(self) -> bool:
+        if self.storage:
+            return True if self.storage.getItem("use_separate_recording_stream") else False
+        else:
+            return False
+
+    @property
     def snapshot_throttle_interval(self) -> int:
         interval = self.storage.getItem("snapshot_throttle_interval")
         if interval is None:
@@ -494,6 +501,18 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
                     "type": "boolean",
                 }
             )
+        if self.use_sip_webrtc_streaming:
+            result.append(
+                {
+                    "group": "General",
+                    "key": "use_separate_recording_stream",
+                    "title": "Use separate recording stream",
+                    "value": self.use_separate_recording_stream,
+                    "description": "This will expose the Cloud RTSP Stream Option to use as a separate recording stream for use with " + \
+                                "downstream providers such as HomeKit.",
+                    "type": "boolean",
+                }
+            )
         result.append(
             {
                 "group": "General",
@@ -548,7 +567,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
             return
 
-        if key in ["wired_to_power", "use_sip_webrtc_streaming"]:
+        if key in ["wired_to_power", "use_sip_webrtc_streaming", "use_separate_recording_stream"]:
             self.storage.setItem(key, value == "true" or value == True)
             await self.provider.discover_devices()
         elif key in ["eco_mode", "disable_eager_streams"]:
@@ -697,6 +716,28 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
 
     async def getVideoStreamOptions(self, id: str = None) -> List[ResponseMediaStreamOptions]:
         if self.use_sip_webrtc_streaming:
+            if self.use_separate_recording_stream:
+                options = [
+                    {
+                        "id": 'default',
+                        "name": 'Cloud RTSP',
+                        "container": 'rtsp',
+                        "video": {
+                            "codec": 'h264',
+                        },
+                        "audio": None if self.arlo_device.get("modelId") == "VMC3030" else {
+                            "codec": 'aac',
+                        },
+                        "source": 'cloud',
+                        "tool": 'scrypted',
+                        "userConfigurable": False,
+                    },
+                ]
+
+                if id is None:
+                    return options
+
+                return next(iter([o for o in options if o['id'] == id]))
             return []
 
         options = [
