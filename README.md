@@ -2,7 +2,7 @@
 
 The Arlo Plugin connects Scrypted to Arlo Cloud, allowing you to access all of your Arlo cameras in Scrypted.
 
-It is highly recommended to create a dedicated Arlo account for use with this plugin and share your cameras from your main account, as Arlo only permits one active login to their servers per account. Using a separate account allows you to use the Arlo app or website simultaneously with this plugin, otherwise logging in from one place will log you out from all other devices.
+With the changes for local streaming for cameras that support it, you must use your main Arlo account in the Scrypted plugin and it is highly recommended to create a dedicated Arlo account for use with the Arlo app or website and share your cameras from your main account, as Arlo only permits one active login to their servers per account. Using a separate account allows you to use the Arlo app or website simultaneously with this plugin, otherwise logging in from one place will log you out from all other devices.
 
 The account you use for this plugin must have either SMS or email set as the default 2FA option. Once you enter your username and password on the plugin settings page, you should receive a 2FA code through your default 2FA option. Enter that code into the provided box, and your cameras will appear in Scrypted. Or, see below for configuring IMAP to auto-login with 2FA.
 
@@ -10,7 +10,7 @@ If you experience any trouble logging in, clear the username and password boxes,
 
 If you are unable to see shared cameras in your separate Arlo account, ensure that both your primary and secondary accounts are upgraded according to this [forum post](https://web.archive.org/web/20230710141914/https://community.arlo.com/t5/Arlo-Secure/Invited-friend-cannot-see-devices-on-their-dashboard-Arlo-Pro-2/m-p/1889396#M1813). Verify the sharing worked by logging in via the Arlo web dashboard.
 
-**If you add or remove cameras from your main Arlo account, or share/un-share/re-share cameras with the Arlo account used with this plugin, ensure that you reload this plugin to get the updated camera state from Arlo Cloud.**
+**If you add or remove cameras from your main Arlo account, ensure that you reload this plugin to get the updated camera state from Arlo Cloud.**
 
 ## General Setup Notes
 
@@ -24,7 +24,7 @@ If you are unable to see shared cameras in your separate Arlo account, ensure th
 * If using a downstream plugin (e.g. Homekit) and using WebRTC, the recommended RTP Sender in the Homekit plugin is `default`. Even if you are using RTSP to record. If you are only using RTSP/DASH and not using WebRTC at all, the recommended RTP Sender is `FFmpeg`.
 * Prebuffering should only be enabled if the camera is wired to a persistent power source, such as a wall outlet, solar panels do not appear to be sufficient. Prebuffering will only work if your camera does not have a battery or `Plugged In to External Power` is selected.
 
-Note that streaming cameras uses extra Internet bandwidth, since video and audio packets will need to travel from the camera through your network, out to Arlo Cloud, and then back to your network and into Scrypted.
+Note that streaming cameras uses extra Internet bandwidth, since video and audio packets will need to travel from the camera through your network, out to Arlo Cloud, and then back to your network and into Scrypted. With the addition of local streaming for cameras that support it, a base station is required. This allows for the local network communication between the plugin and the camera without having to bring the stream down from the cloud first.
 
 ## IMAP 2FA
 
