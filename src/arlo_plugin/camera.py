@@ -485,15 +485,18 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
                                "Additional eco mode settings will appear when this is turned on.",
                 "type": "boolean",
             },
+        )
+        result.append(
             {
                 "group": "General",
                 "key": "disable_eager_streams",
-                "title": "Disable Eager Streams",
+                "title": "Disable Eager Streams for RTSP/DASH",
                 "value": self.disable_eager_streams,
                 "description": "If eager streams are disabled, Scrypted will wait for Arlo Cloud to report that " + \
-                            "the camera stream has started before passing the stream URL to downstream consumers.",
+                               "the RTSP or DASH camera stream has started before passing the stream URL to " + \
+                               "downstream consumers.",
                 "type": "boolean",
-            },
+            }
         )
         if self.eco_mode:
             result.append(
