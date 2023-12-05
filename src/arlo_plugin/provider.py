@@ -1,3 +1,4 @@
+import os
 import asyncio
 from bs4 import BeautifulSoup
 import email
@@ -48,6 +49,8 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
     mfa_strategy_choices = ["Manual", "IMAP"]
 
+    FILE_STORAGE = os.path.join(os.environ['SCRYPTED_PLUGIN_VOLUME'], 'zip', 'unzipped', 'fs')
+
     def __init__(self, nativeId: str = None) -> None:
         super().__init__(nativeId=nativeId)
         self.logger_name = "Provider"
@@ -60,6 +63,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         self.imap_signal = None
         self.imap_skip_emails = None
         self.device_discovery_lock = asyncio.Lock()
+
+        self.storage.setItem("arlo_public_key", None)
+        self.storage.setItem("arlo_private_key", None)
 
         self.propagate_verbosity()
         self.propagate_transport()
@@ -112,6 +118,12 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
     def _gen_arlo_keypair(self) -> tuple:
         keys = scrypted_arlo_go.KeysOutput(handle=_scrypted_arlo_go.scrypted_arlo_go_GenerateRSAKeys(2048))
         public_key, private_key = keys.PublicPEM, keys.PrivatePEM
+        public = open(f'{ArloProvider.FILE_STORAGE}/public.key', "x")
+        public.write(f'{public_key}')
+        public.close()
+        private = open(f'{ArloProvider.FILE_STORAGE}/private.key', "x")
+        private.write(f'{private_key}')
+        private.close()
         self.storage.setItem("arlo_public_key", public_key)
         self.storage.setItem("arlo_private_key", private_key)
         return public_key, private_key
