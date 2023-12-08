@@ -42,14 +42,14 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         self.storeCertificates(peerCert, deviceCert, icaCert)
 
     def storeCertificates(self, peerCert: str, deviceCert: str, icaCert: str) -> None:
-        peer = open(f'{ArloBasestation.FILE_STORAGE}/peerCert.cer', "x")
-        peer.write(f'-----BEGIN CERTIFICATE-----\n{peerCert}\n-----END CERTIFICATE-----')
+        peer = open(f'{ArloBasestation.FILE_STORAGE}/{self.provider._arlo.user_id}_{self.arlo_device["deviceId"]}.crt', "x")
+        peer.write(f'-----BEGIN CERTIFICATE-----\n{chr(10).join([peerCert[idx:idx+64] for idx in range(len(peerCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
         peer.close()
-        device = open(f'{ArloBasestation.FILE_STORAGE}/deviceCert.cer', "x")
-        device.write(f'-----BEGIN CERTIFICATE-----\n{deviceCert}\n-----END CERTIFICATE-----')
+        device = open(f'{ArloBasestation.FILE_STORAGE}/{self.arlo_device["deviceId"]}.crt', "x")
+        device.write(f'-----BEGIN CERTIFICATE-----\n{chr(10).join([deviceCert[idx:idx+64] for idx in range(len(deviceCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
         device.close()
-        ica = open(f'{ArloBasestation.FILE_STORAGE}/icaCert.cer', "x")
-        ica.write(f'-----BEGIN CERTIFICATE-----\n{icaCert}\n-----END CERTIFICATE-----')
+        ica = open(f'{ArloBasestation.FILE_STORAGE}/ica.crt', "x")
+        ica.write(f'-----BEGIN CERTIFICATE-----\n{chr(10).join([icaCert[idx:idx+64] for idx in range(len(icaCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
         ica.close()
 
     @property

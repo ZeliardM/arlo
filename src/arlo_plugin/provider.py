@@ -118,10 +118,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
     def _gen_arlo_keypair(self) -> tuple:
         keys = scrypted_arlo_go.KeysOutput(handle=_scrypted_arlo_go.scrypted_arlo_go_GenerateRSAKeys(2048))
         public_key, private_key = keys.PublicPEM, keys.PrivatePEM
-        public = open(f'{ArloProvider.FILE_STORAGE}/public.key', "x")
+        public = open(f'{ArloProvider.FILE_STORAGE}/public.pem', "x")
         public.write(f'{public_key}')
         public.close()
-        private = open(f'{ArloProvider.FILE_STORAGE}/private.key', "x")
+        private = open(f'{ArloProvider.FILE_STORAGE}/private_pkcs1.pem', "x")
         private.write(f'{private_key}')
         private.close()
         self.storage.setItem("arlo_public_key", public_key)
