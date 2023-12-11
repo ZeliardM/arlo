@@ -19,6 +19,7 @@ from scrypted_sdk.types import Setting, Settings, SettingValue, Device, Camera, 
 from .experimental import EXPERIMENTAL
 from .arlo.arlo_async import USER_AGENTS
 from .base import ArloDeviceBase
+from .basestation import ArloBasestation
 from .spotlight import ArloSpotlight, ArloFloodlight, ArloNightlight
 from .vss import ArloSirenVirtualSecuritySystem
 from .child_process import HeartbeatChildProcess
@@ -708,15 +709,57 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             }
         ]
 
+        if self.has_local_live_streaming:
+            options[0]["id"] = "rtsp"
+            options = [
+                {
+                    "id": 'default',
+                    "name": 'Local RTSP',
+                    "container": 'rtsp',
+                    "video": {
+                        "codec": 'h264',
+                    },
+                    "audio": None if self.arlo_device.get("modelId") == "VMC3030" else {
+                        "codec": 'aac',
+                    },
+                    "source": 'local',
+                    "tool": 'scrypted',
+                    "userConfigurable": False,
+                },
+            ] + options
+
         if id is None:
             return options
 
         return next(iter([o for o in options if o['id'] == id]))
 
-    async def _getVideoStreamURL(self, container: str) -> str:
-        self.logger.info(f"Requesting {container} stream")
-        url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device, mode=container, eager=not self.disable_eager_streams), timeout=self.timeout)
-        self.logger.debug(f"Got {container} stream URL at {url}")
+    async def _getVideoStreamURL(self, name: str, container: str) -> str:
+        if name == "Local RTSP":
+            self.logger.info("Setting up local RTSP stream")
+
+            basestation: ArloBasestation = await self.provider.getDevice_impl(self.arlo_basestation["deviceId"])
+            if basestation is None:
+                raise Exception("this camera's basestation is missing or hidden, unable to use local stream")
+
+            if basestation.ip_addr is None:
+                raise Exception("must specify the basestation's IP address to stream")
+
+            proxy = scrypted_arlo_go.NewLocalStreamProxy(
+                self.info_logger.logger_server_port,
+                self.debug_logger.logger_server_port,
+                self.arlo_basestation["modelId"].upper()[:7], # trim off any suffixes, maybe this will break on some models?
+                basestation.ip_addr,
+                basestation.peer_cert,
+                self.provider.arlo_private_key,
+            )
+            port = proxy.Start()
+
+            url = f"rtsp://localhost:{port}/{self.nativeId}/tcp/avc"
+            self.logger.debug(f"Constructed local stream URL at {url}")
+        else:
+            self.logger.info(f"Requesting {container} stream")
+            url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device, mode=container, eager=not self.disable_eager_streams), timeout=self.timeout)
+            self.logger.debug(f"Got {container} stream URL at {url}")
         return url
 
     @async_print_exception_guard
@@ -727,7 +770,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
         mso['refreshAt'] = round(time.time() * 1000) + 30 * 60 * 1000
         container = mso["container"]
 
-        url = await self._getVideoStreamURL(container)
+        url = await self._getVideoStreamURL(mso["name"], container)
         additional_ffmpeg_args = []
 
         if container == "dash":

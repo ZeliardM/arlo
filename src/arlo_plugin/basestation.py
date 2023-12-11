@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import asyncio
 
 from typing import List, TYPE_CHECKING
 
@@ -21,14 +21,28 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         "vmb4500"
     ]
 
-    FILE_STORAGE = os.path.join(os.environ['SCRYPTED_PLUGIN_VOLUME'], 'zip', 'unzipped', 'fs')
-
     vss: ArloSirenVirtualSecuritySystem = None
 
     def __init__(self, nativeId: str, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
+        self.create_task(self.delayed_init())
 
-        if self.has_local_live_streaming and not any(filename.endswith('.cer') for filename in os.listdir(ArloBasestation.FILE_STORAGE)):
+    async def delayed_init(self) -> None:
+        iterations = 1
+        while True:
+            if iterations > 100:
+                self.logger.error("Delayed init exceeded iteration limit, giving up")
+                return
+
+            try:
+                cert_registered = self.peer_cert
+                break
+            except Exception as e:
+                self.logger.debug(f"Delayed init failed, will try again: {e}")
+                await asyncio.sleep(0.1)
+            iterations += 1
+
+        if self.has_local_live_streaming and not cert_registered:
             self.createCertificates()
 
     def createCertificates(self) -> None:
@@ -42,15 +56,9 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         self.storeCertificates(peerCert, deviceCert, icaCert)
 
     def storeCertificates(self, peerCert: str, deviceCert: str, icaCert: str) -> None:
-        peer = open(f'{ArloBasestation.FILE_STORAGE}/{self.provider._arlo.user_id}_{self.arlo_device["deviceId"]}.crt', "x")
-        peer.write(f'-----BEGIN CERTIFICATE-----\n{chr(10).join([peerCert[idx:idx+64] for idx in range(len(peerCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
-        peer.close()
-        device = open(f'{ArloBasestation.FILE_STORAGE}/{self.arlo_device["deviceId"]}.crt', "x")
-        device.write(f'-----BEGIN CERTIFICATE-----\n{chr(10).join([deviceCert[idx:idx+64] for idx in range(len(deviceCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
-        device.close()
-        ica = open(f'{ArloBasestation.FILE_STORAGE}/ica.crt', "x")
-        ica.write(f'-----BEGIN CERTIFICATE-----\n{chr(10).join([icaCert[idx:idx+64] for idx in range(len(icaCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
-        ica.close()
+        self.storage.setItem("peer_cert", f'-----BEGIN CERTIFICATE-----\n{chr(10).join([peerCert[idx:idx+64] for idx in range(len(peerCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
+        self.storage.setItem("device_cert", f'-----BEGIN CERTIFICATE-----\n{chr(10).join([deviceCert[idx:idx+64] for idx in range(len(deviceCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
+        self.storage.setItem("ica_cert", f'-----BEGIN CERTIFICATE-----\n{chr(10).join([icaCert[idx:idx+64] for idx in range(len(icaCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
 
     @property
     def has_siren(self) -> bool:
@@ -59,6 +67,22 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     @property
     def has_local_live_streaming(self) -> bool:
         return self.provider.arlo.GetDeviceCapabilities(self.arlo_device).get("Capabilities", {}).get("sipLiveStream", False)
+
+    @property
+    def ip_addr(self) -> str:
+        return self.storage.getItem("ip_addr")
+
+    @property
+    def peer_cert(self) -> str:
+        return self.storage.getItem("peer_cert")
+
+    @property
+    def device_cert(self) -> str:
+        return self.storage.getItem("device_cert")
+
+    @property
+    def ica_cert(self) -> str:
+        return self.storage.getItem("ica_cert")
 
     def get_applicable_interfaces(self) -> List[str]:
         return [
@@ -109,6 +133,15 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         return [
             {
                 "group": "General",
+                "key": "ip_addr",
+                "title": "IP Address",
+                "value": self.ip_addr,
+                "description": "Add this to tell Scrypted the local IP address of the basestation. " + \
+                               "This will be used for cameras that support local streaming. " + \
+                               "Note that the basestation must be in the same network as Scrypted for this to work.",
+            },
+            {
+                "group": "General",
                 "key": "print_debug",
                 "title": "Debug Info",
                 "description": "Prints information about this device to console.",
@@ -119,4 +152,6 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     async def putSetting(self, key: str, value: SettingValue) -> None:
         if key == "print_debug":
             self.logger.info(f"Device Capabilities: {self.arlo_capabilities}")
+        elif key in ["ip_addr"]:
+            self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
