@@ -436,14 +436,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
         return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("localLiveStreaming", False)
 
     @property
-    def local_live_streaming_codec_list(self) -> List[str]:
-        codecs = self.storage.getItem("local_live_streaming_codec_list")
-        if codecs is None or codecs == []:
-            codecs = self.arlo_capabilities.get("Capabilities", {}).get("Video", {}).get("Codecs", {})
-            self.storage.setItem("local_live_streaming_codec_list", codecs)
-        return codecs
-
-    @property
     def local_live_streaming_codec(self) -> str:
         codec = self.storage.getItem("local_live_streaming_codec")
         if codec is None or codec == "":
@@ -490,18 +482,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
                     "type": "boolean",
                 }
             )
-        if self.has_local_live_streaming:
-            result.append(
-                {
-                    "group": "General",
-                    "key": "local_live_streaming_codec",
-                    "title": "Local Live Streaming Codec",
-                    "description": "Select the codec to pull the Local Live Stream from the basestation.",
-                    "value": self.local_live_streaming_codec,
-                    "multiple": False,
-                    "choices": [codec for codec in self.local_live_streaming_codec_list],
-                }
-            )
         result.append(
             {
                 "group": "General",
@@ -514,6 +494,18 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
                 "type": "boolean",
             }
         )
+        if self.has_local_live_streaming:
+            result.append(
+                {
+                    "group": "General",
+                    "key": "local_live_streaming_codec",
+                    "title": "Local Live Streaming Codec",
+                    "description": "Select the codec to pull the Local Live Stream from the basestation.",
+                    "value": self.local_live_streaming_codec,
+                    "multiple": False,
+                    "choices": [codec for codec in self.arlo_capabilities.get("Capabilities", {}).get("Video", {}).get("Codecs", {})],
+                }
+            )
         if self.eco_mode:
             result.append(
                 {

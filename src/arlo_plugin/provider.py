@@ -127,7 +127,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
     @property
     def arlo_transport(self) -> str:
-        return "SSE"
+        # return "SSE"
         # This code is here for posterity, however it looks that as of 06/01/2023
         # Arlo has disabled the MQTT backend
         transport = self.storage.getItem("arlo_transport")
@@ -228,6 +228,14 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             one_location = False
             self.storage.setItem("one_location", one_location)
         return one_location
+    
+    @property
+    def stop_plugin(self) -> bool:
+        stop_plugin = self.storage.getItem("stop_plugin")
+        if stop_plugin is None:
+            stop_plugin = False
+            self.storage.setItem("stop_plugin", stop_plugin)
+        return stop_plugin
 
     @property
     def arlo(self) -> Arlo:
@@ -581,9 +589,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 "group": "General",
                 "key": "arlo_transport",
                 "title": "Underlying Transport Protocol",
-                "description": "Arlo Cloud currently only supports the SSE protocol.",
+                "description": "Arlo Cloud supports the SSE & MQTT protocols.",
                 "value": self.arlo_transport,
-                "readonly": True,
+                "choices": ArloProvider.arlo_transport_choices,
             },
             {
                 "group": "General",
@@ -618,6 +626,14 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 "title": "Allow Scrypted to Control Arlo Security Modes",
                 "description": "Enable or Disable allowing Scrypted to handle changing Security Modes in the Arlo App.",
                 "value": self.mode_enabled,
+                "type": "boolean",
+            },
+            {
+                "group": "General",
+                "key": "stop_plugin",
+                "title": "Stop Arlo Plugin",
+                "description": "Stops the Arlo Plugin so you can use your main account through the Arlo Web Portal or the Arlo App.",
+                "value": self.stop_plugin,
                 "type": "boolean",
             },
         ])
@@ -672,6 +688,15 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 if self._arlo is not None and self._arlo.logged_in:
                     self._arlo.Unsubscribe()
                     await self.do_arlo_setup()
+            elif key == "stop_plugin":
+                if value == True:
+                    if self._arlo is not None and self._arlo.logged_in:
+                        self.invalidate_arlo_client()
+                        self.exit_imap()
+                elif value == False:
+                    if self.mfa_strategy == "IMAP":
+                        self.initialize_imap()
+                skip_arlo_client = True
             else:
                 # force arlo client to be invalidated and reloaded
                 self.invalidate_arlo_client()
