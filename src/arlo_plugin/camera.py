@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import asyncio
 import aiohttp
 from async_timeout import timeout as async_timeout
@@ -193,8 +192,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
         "vmc2030b",
     ]
 
-    FILE_STORAGE = os.path.join(os.environ['SCRYPTED_PLUGIN_VOLUME'], 'zip', 'unzipped', 'fs')
-
     timeout: int = 30
     intercom_session: ArloCameraIntercomSession = None
     light: ArloSpotlight = None
@@ -222,36 +219,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
         self.start_audio_subscription()
         self.start_battery_subscription()
         self.create_task(self.delayed_init())
-
-    def getCertificates(self, certificateName: str) -> str:
-        file = open(f'{ArloCamera.FILE_STORAGE}/{certificateName}.cer', "r")
-        cert = file.read()
-        file.close()
-        return cert
-
-    @property
-    def peerCert(self) -> None:
-        peerCert = self.storage.getItem("peerCert")
-        if peerCert is None:
-            peerCert = self.getCertificates("peerCert")
-            self.storage.setItem("peerCert", peerCert)
-        return peerCert
-
-    @property
-    def deviceCert(self) -> None:
-        deviceCert = self.storage.getItem("deviceCert")
-        if deviceCert is None:
-            deviceCert = self.getCertificates("deviceCert")
-            self.storage.setItem("deviceCert", deviceCert)
-        return deviceCert
-
-    @property
-    def icaCert(self) -> None:
-        icaCert = self.storage.getItem("icaCert")
-        if icaCert is None:
-            icaCert = self.getCertificates("icaCert")
-            self.storage.setItem("icaCert", icaCert)
-        return icaCert
 
     async def delayed_init(self) -> None:
         if not self.has_battery:
@@ -322,7 +289,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             ScryptedInterface.Settings.value,
         ])
 
-        if self.has_sip_webrtc_streaming:
+        if self.has_sip_webrtc_streaming and not self.disable_sip_webrtc_streaming:
             results.add(ScryptedInterface.RTCSignalingChannel.value)
 
         if self.has_push_to_talk:
@@ -402,6 +369,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             return True if self.storage.getItem("disable_eager_streams") else False
         else:
             return False
+        
+    @property
+    def disable_sip_webrtc_streaming(self) -> bool:
+        if self.storage:
+            return True if self.storage.getItem("disable_sip_webrtc_streaming") else False
+        else:
+            return False
 
     @property
     def snapshot_throttle_interval(self) -> int:
@@ -461,6 +435,22 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
     def has_local_live_streaming(self) -> bool:
         return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("localLiveStreaming", False)
 
+    @property
+    def local_live_streaming_codec_list(self) -> List[str]:
+        codecs = self.storage.getItem("local_live_streaming_codec_list")
+        if codecs is None or codecs == []:
+            codecs = self.arlo_capabilities.get("Capabilities", {}).get("Video", {}).get("Codecs", {})
+            self.storage.setItem("local_live_streaming_codec_list", codecs)
+        return codecs
+
+    @property
+    def local_live_streaming_codec(self) -> str:
+        codec = self.storage.getItem("local_live_streaming_codec")
+        if codec is None or codec == "":
+            codec = "h.264"
+            self.storage.setItem("local_live_streaming_codec", codec)
+        return codec
+
     async def getSettings(self) -> List[Setting]:
         result = []
         if self.has_battery:
@@ -487,14 +477,39 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
                 "type": "boolean",
             },
         )
+        if self.has_sip_webrtc_streaming:   
+            result.append(
+                {
+                    "group": "General",
+                    "key": "disable_sip_webrtc_streaming",
+                    "title": "Disable SIP WebRTC Streaming",
+                    "value": self.disable_sip_webrtc_streaming,
+                    "description": "If WebRTC Streaming is enabled, Scrypted will only use WebRTC Streams in the Web " + \
+                                   "Management Console. Disable SIP WebRTC Streaming to be able to access other streams " + \
+                                   "in the Scrypted Web Management Console.",
+                    "type": "boolean",
+                }
+            )
+        if self.has_local_live_streaming:
+            result.append(
+                {
+                    "group": "General",
+                    "key": "local_live_streaming_codec",
+                    "title": "Local Live Streaming Codec",
+                    "description": "Select the codec to pull the Local Live Stream from the basestation.",
+                    "value": self.local_live_streaming_codec,
+                    "multiple": False,
+                    "choices": [codec for codec in self.local_live_streaming_codec_list],
+                }
+            )
         result.append(
             {
                 "group": "General",
                 "key": "disable_eager_streams",
-                "title": "Disable Eager Streams for RTSP/DASH",
+                "title": "Disable Eager Streams for Cloud RTSP/DASH",
                 "value": self.disable_eager_streams,
                 "description": "If eager streams are disabled, Scrypted will wait for Arlo Cloud to report that " + \
-                               "the RTSP or DASH camera stream has started before passing the stream URL to " + \
+                               "the Cloud RTSP or DASH camera stream has started before passing the stream URL to " + \
                                "downstream consumers.",
                 "type": "boolean",
             }
@@ -530,7 +545,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
             return
 
-        if key in ["wired_to_power"]:
+        if key in ["wired_to_power", "disable_sip_webrtc_streaming"]:
             self.storage.setItem(key, value == "true" or value == True)
             await self.provider.discover_devices()
         elif key in ["eco_mode", "disable_eager_streams"]:
@@ -709,24 +724,42 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             }
         ]
 
-        if self.has_local_live_streaming:
+        if self.has_local_live_streaming and self.arlo_device["deviceId"] != self.arlo_basestation["deviceId"]:
             options[0]["id"] = "rtsp"
-            options = [
-                {
-                    "id": 'default',
-                    "name": 'Local RTSP',
-                    "container": 'rtsp',
-                    "video": {
-                        "codec": 'h264',
+            if self.local_live_streaming_codec == "h.264":
+                options = [
+                    {
+                        "id": 'default',
+                        "name": 'Local RTSP',
+                        "container": 'rtsp',
+                        "video": {
+                            "codec": 'h264',
+                        },
+                        "audio": None if self.arlo_device.get("modelId") == "VMC3030" else {
+                            "codec": 'aac',
+                        },
+                        "source": 'local',
+                        "tool": 'scrypted',
+                        "userConfigurable": False,
                     },
-                    "audio": None if self.arlo_device.get("modelId") == "VMC3030" else {
-                        "codec": 'aac',
+                ] + options
+            elif self.local_live_streaming_codec == "h.265":
+                options = [
+                    {
+                        "id": 'default',
+                        "name": 'Local RTSP',
+                        "container": 'rtsp',
+                        "video": {
+                            "codec": 'h265',
+                        },
+                        "audio": None if self.arlo_device.get("modelId") == "VMC3030" else {
+                            "codec": 'aac',
+                        },
+                        "source": 'local',
+                        "tool": 'scrypted',
+                        "userConfigurable": False,
                     },
-                    "source": 'local',
-                    "tool": 'scrypted',
-                    "userConfigurable": False,
-                },
-            ] + options
+                ] + options
 
         if id is None:
             return options
@@ -739,10 +772,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
 
             basestation: ArloBasestation = await self.provider.getDevice_impl(self.arlo_basestation["deviceId"])
             if basestation is None:
-                raise Exception("this camera's basestation is missing or hidden, unable to use local stream")
+                raise Exception("This camera's basestation is missing or hidden, unable to use local stream.")
+            
+            if self.arlo_device["deviceId"] == self.arlo_basestation["deviceId"]:
+                raise Exception("This camera is not connected to a basestation, unable to use local stream.")
 
             if basestation.ip_addr is None:
-                raise Exception("must specify the basestation's IP address to stream")
+                raise Exception("Must specify the basestation's IP address to use local stream.")
 
             proxy = scrypted_arlo_go.NewLocalStreamProxy(
                 self.info_logger.logger_server_port,
@@ -754,7 +790,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, DeviceProvider, 
             )
             port = proxy.Start()
 
-            url = f"rtsp://localhost:{port}/{self.nativeId}/tcp/avc"
+            if self.local_live_streaming_codec == "h.264":
+                url = f"rtsp://localhost:{port}/{self.nativeId}/tcp/avc"
+            elif self.local_live_streaming_codec == "h.265":
+                url = f"rtsp://localhost:{port}/{self.nativeId}/tcp/hevc"
             self.logger.debug(f"Constructed local stream URL at {url}")
         else:
             self.logger.info(f"Requesting {container} stream")
@@ -1232,8 +1271,6 @@ class ArloCameraRTCSessionControl:
         self.logger.debug(f"setPlayback options {options}")
 
         if options["audio"]:
-            self.logger.info("Starting intercom")
             self.arlo_session.arlo_sip.StartTalk()
         else:
-            self.logger.info("Stopping intercom")
             self.arlo_session.arlo_sip.StopTalk()

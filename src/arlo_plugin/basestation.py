@@ -130,24 +130,29 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         return self.vss
 
     async def getSettings(self) -> List[Setting]:
-        return [
-            {
-                "group": "General",
-                "key": "ip_addr",
-                "title": "IP Address",
-                "value": self.ip_addr,
-                "description": "Add this to tell Scrypted the local IP address of the basestation. " + \
-                               "This will be used for cameras that support local streaming. " + \
-                               "Note that the basestation must be in the same network as Scrypted for this to work.",
-            },
+        result = []
+        if self.has_local_live_streaming:
+            result.append(
+                {
+                    "group": "General",
+                    "key": "ip_addr",
+                    "title": "IP Address",
+                    "value": self.ip_addr,
+                    "description": "Add this to tell Scrypted the local IP address of the basestation. " + \
+                                   "This will be used for cameras that support local streaming. " + \
+                                   "Note that the basestation must be in the same network as Scrypted for this to work.",
+                },
+            )
+        result.append(
             {
                 "group": "General",
                 "key": "print_debug",
                 "title": "Debug Info",
                 "description": "Prints information about this device to console.",
                 "type": "button",
-            }
-        ]
+            },
+        )
+        return result
 
     async def putSetting(self, key: str, value: SettingValue) -> None:
         if key == "print_debug":
