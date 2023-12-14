@@ -391,7 +391,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
             return True if self.storage.getItem("disable_eager_streams") else False
         else:
             return False
-        
+
     @property
     def disable_sip_webrtc_streaming(self) -> bool:
         if self.storage:
@@ -455,7 +455,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("localLiveStreaming", False)
+        return self.smart_features.get("planFeatures", {}).get("localLiveStreaming", False)
 
     @property
     def local_live_streaming_codec(self) -> str:
@@ -464,6 +464,18 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
             codec = "h.264"
             self.storage.setItem("local_live_streaming_codec", codec)
         return codec
+
+    @property
+    def local_live_streaming_codec_list(self) -> List[str]:
+        capabilities = self.arlo_capabilities.get("Capabilities", {})
+        video = capabilities.get("Video", {})
+        if isinstance(video, list):
+            return sum([v.get("Codecs", []) for v in video], [])
+        return video.get("Codecs", [])
+
+    @property
+    def smart_features(self) -> dict:
+        return self.provider.arlo.GetSmartFeatures(self.arlo_device)
 
     async def getSettings(self) -> List[Setting]:
         result = []
@@ -491,7 +503,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
                 "type": "boolean",
             },
         )
-        if self.has_sip_webrtc_streaming:   
+        if self.has_sip_webrtc_streaming:
             result.append(
                 {
                     "group": "General",
@@ -525,7 +537,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
                     "description": "Select the codec to pull the Local Live Stream from the basestation.",
                     "value": self.local_live_streaming_codec,
                     "multiple": False,
-                    "choices": [codec for codec in self.arlo_capabilities.get("Capabilities", {}).get("Video", {}).get("Codecs", {})],
+                    "choices": self.local_live_streaming_codec_list,
                 }
             )
         if self.eco_mode:
@@ -566,6 +578,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
             self.storage.setItem(key, value == "true" or value == True)
         elif key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
+            self.logger.info(f"Smart Features: {json.dumps(self.smart_features)}")
         else:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
@@ -787,7 +800,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
             basestation: ArloBasestation = await self.provider.getDevice_impl(self.arlo_basestation["deviceId"])
             if basestation is None:
                 raise Exception("This camera's basestation is missing or hidden, unable to use local stream.")
-            
+
             if self.arlo_device["deviceId"] == self.arlo_basestation["deviceId"]:
                 raise Exception("This camera is not connected to a basestation, unable to use local stream.")
 
