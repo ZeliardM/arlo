@@ -455,7 +455,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.smart_features.get("planFeatures", {}).get("localLiveStreaming", False)
+        return self.smart_features.get("planFeatures", {}).get("localLiveStreaming", False) and self.arlo_device["deviceId"] != self.arlo_basestation["deviceId"]
 
     @property
     def local_live_streaming_codec(self) -> str:
@@ -751,7 +751,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
             }
         ]
 
-        if self.has_local_live_streaming and self.arlo_device["deviceId"] != self.arlo_basestation["deviceId"]:
+        if self.has_local_live_streaming:
             options[0]["id"] = "rtsp"
             if self.local_live_streaming_codec == "h.264":
                 options = [
