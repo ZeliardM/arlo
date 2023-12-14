@@ -228,7 +228,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             one_location = False
             self.storage.setItem("one_location", one_location)
         return one_location
-    
+
     @property
     def stop_plugin(self) -> bool:
         stop_plugin = self.storage.getItem("stop_plugin")
