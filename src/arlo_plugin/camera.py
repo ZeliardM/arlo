@@ -13,7 +13,7 @@ from typing import List, TYPE_CHECKING
 import scrypted_arlo_go
 
 import scrypted_sdk
-from scrypted_sdk.types import Setting, Settings, SettingValue, Device, Camera, VideoCamera, ObjectDetector, ObjectDetectionTypes, RequestMediaStreamOptions, VideoClips, VideoClip, VideoClipOptions, MotionSensor, AudioSensor, Battery, Charger, ChargeState, DeviceProvider, MediaObject, ResponsePictureOptions, ResponseMediaStreamOptions, ScryptedMimeTypes, ScryptedInterface, ScryptedDeviceType
+from scrypted_sdk.types import Brightness, Setting, Settings, SettingValue, Device, Camera, VideoCamera, ObjectDetector, ObjectDetectionTypes, RequestMediaStreamOptions, VideoClips, VideoClip, VideoClipOptions, MotionSensor, AudioSensor, Battery, Charger, ChargeState, DeviceProvider, MediaObject, ResponsePictureOptions, ResponseMediaStreamOptions, ScryptedMimeTypes, ScryptedInterface, ScryptedDeviceType
 
 from .experimental import EXPERIMENTAL
 from .arlo.arlo_async import USER_AGENTS
@@ -101,7 +101,16 @@ class ArloCameraIntercomSession(BackgroundTaskMixin):
         raise NotImplementedError("not implemented")
 
 
-class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, DeviceProvider, VideoClips, MotionSensor, AudioSensor, Battery, Charger):
+class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, ObjectDetector, DeviceProvider, VideoClips, MotionSensor, AudioSensor, Battery, Charger):
+    SCRYPTED_TO_ARLO_BRIGHTNESS_MAP = {
+        0: -2,
+        25: -1,
+        50: 0,
+        75: 1,
+        100: 2
+    }
+    ARLO_TO_SCRYPTED_BRIGHTNESS_MAP = {v: k for k, v in SCRYPTED_TO_ARLO_BRIGHTNESS_MAP.items()}
+
     MODELS_WITH_SPOTLIGHTS = [
         "vmc2030",
         "vmc2032",
@@ -218,6 +227,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
         self.start_motion_subscription()
         self.start_audio_subscription()
         self.start_battery_subscription()
+        self.start_brightness_subscription()
         self.start_smart_motion_subscription()
         self.create_task(self.delayed_init())
 
@@ -282,6 +292,15 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
             self.provider.arlo.SubscribeToBatteryEvents(self.arlo_basestation, self.arlo_device, callback)
         )
 
+    def start_brightness_subscription(self) -> None:
+        def callback(brightness):
+            self.brightness = ArloCamera.ARLO_TO_SCRYPTED_BRIGHTNESS_MAP[brightness]
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToBrightnessEvents(self.arlo_basestation, self.arlo_device, callback)
+        )
+
     def start_smart_motion_subscription(self) -> None:
         def callback(event):
             timestamp = event.get("utcCreatedDate")
@@ -309,6 +328,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
             ScryptedInterface.MotionSensor.value,
             ScryptedInterface.Settings.value,
             ScryptedInterface.ObjectDetector.value,
+            ScryptedInterface.Brightness.value,
         ])
 
         if self.has_sip_webrtc_streaming and not self.disable_sip_webrtc_streaming:
@@ -992,6 +1012,23 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, ObjectDetector, 
                 "cat",
             ]
         }
+
+    @async_print_exception_guard
+    async def setBrightness(self, brightness: float) -> None:
+        """We map brightness to Arlo's video brightness according to the following:
+        0: -2
+        25: -1
+        50: 0
+        75: 1
+        100: 2
+
+        All other values are invalid.
+        """
+        self.logger.debug(f"Brightness {brightness}")
+        brightness = int(brightness)
+        if brightness not in ArloCamera.SCRYPTED_TO_ARLO_BRIGHTNESS_MAP:
+            raise Exception("valid brightness levels are 0, 25, 50, 75, 100")
+        self.provider.arlo.AdjustBrightness(self.arlo_basestation, self.arlo_device, ArloCamera.SCRYPTED_TO_ARLO_BRIGHTNESS_MAP[brightness])
 
 
 class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):
