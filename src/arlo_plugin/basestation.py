@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from typing import List, TYPE_CHECKING
+import json
 
 from scrypted_sdk import ScryptedDeviceBase
 from scrypted_sdk.types import Device, DeviceProvider, Setting, SettingValue, Settings, ScryptedInterface, ScryptedDeviceType
@@ -156,7 +157,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     async def putSetting(self, key: str, value: SettingValue) -> None:
         if key == "print_debug":
-            self.logger.info(f"Device Capabilities: {self.arlo_capabilities}")
+            self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
         elif key in ["ip_addr"]:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
