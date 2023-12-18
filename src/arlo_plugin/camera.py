@@ -475,7 +475,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.smart_features.get("planFeatures", {}).get("localLiveStreaming", False) and self.arlo_device["deviceId"] != self.arlo_basestation["deviceId"]
+        return self.smart_features.get("planFeatures", {}).get("localLiveStreaming", False) and self.arlo_device["deviceId"] != self.arlo_basestation["deviceId"] and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
 
     @property
     def local_live_streaming_codec(self) -> str:

@@ -67,7 +67,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.provider.arlo.GetDeviceCapabilities(self.arlo_device).get("Capabilities", {}).get("sipLiveStream", False)
+        return self.provider.arlo.GetDeviceCapabilities(self.arlo_device).get("Capabilities", {}).get("sipLiveStream", False) and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
 
     @property
     def ip_addr(self) -> str:
