@@ -8,6 +8,7 @@ import json
 from scrypted_sdk import ScryptedDeviceBase
 from scrypted_sdk.types import Device, DeviceProvider, Setting, SettingValue, Settings, ScryptedInterface, ScryptedDeviceType
 
+from .arlo.mdns import AsyncBrowser
 from .base import ArloDeviceBase
 from .vss import ArloSirenVirtualSecuritySystem
 
@@ -71,7 +72,19 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     @property
     def ip_addr(self) -> str:
-        return self.storage.getItem("ip_addr")
+        ip_addr = self.storage.getItem("ip_addr")
+        if ip_addr is None:
+            mdns = AsyncBrowser()
+            mdns.async_run()
+            ip_addr = mdns.services.get(self.arlo_device['deviceId'])
+            self.storage.setItem("ip_addr", ip_addr)
+        else:
+            mdns: AsyncBrowser()
+            mdns.async_run()
+            if ip_addr != mdns.services.get(self.arlo_device['deviceId']):
+                ip_addr = mdns.services.get(self.arlo_device['deviceId'])
+                self.storage.setItem("ip_addr", ip_addr)
+        return ip_addr
 
     @property
     def peer_cert(self) -> str:
