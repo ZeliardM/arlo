@@ -11,7 +11,7 @@ from zeroconf.asyncio import (
 class AsyncListener:
     def __init__(self) -> None:
         super().__init__()
-        self.services = []
+        self.services = {}
     
     def async_on_service_state_change(
         self, zeroconf: Zeroconf, service_type: str, name: str, state_change: ServiceStateChange
@@ -34,14 +34,14 @@ class AsyncListener:
                 'port': info.port,
                 'deviceId': info.properties[b'deviceid'].decode("utf-8")
             }
-            self.services.append({item['deviceId']:item['address']})
+            self.services.update({item['deviceId']:item['address']})
 
 class AsyncBrowser:
     def __init__(self) -> None:
         self.aiobrowser: Optional[AsyncServiceBrowser] = None
         self.aiozc: Optional[AsyncZeroconf] = None
         self.aiolistener: Optional[AsyncListener] = None
-        self.services = []
+        self.services = {}
 
     async def async_run(self) -> None:
         self.aiozc = AsyncZeroconf()

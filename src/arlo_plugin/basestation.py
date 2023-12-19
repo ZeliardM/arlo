@@ -47,6 +47,8 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         if self.has_local_live_streaming and not cert_registered:
             self.createCertificates()
 
+        await self.mdns()
+
     def createCertificates(self) -> None:
         certificates = self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines()))
         self.parseCertificates(certificates)
@@ -72,19 +74,12 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     @property
     def ip_addr(self) -> str:
-        ip_addr = self.storage.getItem("ip_addr")
-        if ip_addr is None:
-            mdns = AsyncBrowser()
-            mdns.async_run()
-            ip_addr = mdns.services.get(self.arlo_device['deviceId'])
-            self.storage.setItem("ip_addr", ip_addr)
-        else:
-            mdns: AsyncBrowser()
-            mdns.async_run()
-            if ip_addr != mdns.services.get(self.arlo_device['deviceId']):
-                ip_addr = mdns.services.get(self.arlo_device['deviceId'])
-                self.storage.setItem("ip_addr", ip_addr)
-        return ip_addr
+        return self.storage.getItem("ip_addr")
+
+    async def mdns(self) -> None:
+        mdns = AsyncBrowser()
+        await mdns.async_run()
+        self.storage.setItem("ip_addr", mdns.services.get(self.arlo_device['deviceId']))
 
     @property
     def peer_cert(self) -> str:
@@ -151,10 +146,11 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                     "group": "General",
                     "key": "ip_addr",
                     "title": "IP Address",
-                    "value": self.ip_addr,
                     "description": "Add this to tell Scrypted the local IP address of the basestation. " + \
                                    "This will be used for cameras that support local streaming. " + \
                                    "Note that the basestation must be in the same network as Scrypted for this to work.",
+                    "value": self.ip_addr,
+                    "readonly": True,
                 },
             )
         result.append(
