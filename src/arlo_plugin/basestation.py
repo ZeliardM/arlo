@@ -75,11 +75,16 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     @property
     def ip_addr(self) -> str:
         return self.storage.getItem("ip_addr")
+    
+    @property
+    def host_name(self) -> str:
+        return self.storage.getItem("host_name")
 
     async def mdns(self) -> None:
         mdns = AsyncBrowser()
         await mdns.async_run()
-        self.storage.setItem("ip_addr", mdns.services.get(self.arlo_device['deviceId']))
+        self.storage.setItem("ip_addr", mdns.services[self.arlo_device['deviceId']].get('address'))
+        self.storage.setItem("host_name", mdns.services[self.arlo_device['deviceId']].get('server'))
 
     @property
     def peer_cert(self) -> str:

@@ -29,12 +29,12 @@ class AsyncListener:
             item = {
                 'name': info.name,
                 'type': info.type,
-                'server': info.server.rstrip(info.server[-1]),
+                'server': info.server.rstrip(info.server[-7]),
                 'address': addresses[0],
                 'port': info.port,
                 'deviceId': info.properties[b'deviceid'].decode("utf-8")
             }
-            self.services.update({item['deviceId']:item['address']})
+            self.services.update({item['deviceId']:item})
 
 class AsyncBrowser:
     def __init__(self) -> None:

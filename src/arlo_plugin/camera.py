@@ -830,7 +830,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             proxy = scrypted_arlo_go.NewLocalStreamProxy(
                 self.info_logger.logger_server_port,
                 self.debug_logger.logger_server_port,
-                self.arlo_basestation["modelId"].upper()[:7], # trim off any suffixes, maybe this will break on some models?
+                basestation.host_name,
                 basestation.ip_addr,
                 basestation.peer_cert,
                 self.provider.arlo_private_key,
