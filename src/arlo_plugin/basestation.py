@@ -151,10 +151,22 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                     "group": "General",
                     "key": "ip_addr",
                     "title": "IP Address",
-                    "description": "Add this to tell Scrypted the local IP address of the basestation. " + \
+                    "description": "This is the IP Address of the basestation pulled from mDNS. " + \
                                    "This will be used for cameras that support local streaming. " + \
                                    "Note that the basestation must be in the same network as Scrypted for this to work.",
                     "value": self.ip_addr,
+                    "readonly": True,
+                },
+            )
+            result.append(
+                {
+                    "group": "General",
+                    "key": "host_name",
+                    "title": "Host Name",
+                    "description": "This is the Host Name of the basestation pulled from mDNS. " + \
+                                   "This will be used for cameras that support local streaming. " + \
+                                   "Note that the basestation must be in the same network as Scrypted for this to work.",
+                    "value": self.host_name,
                     "readonly": True,
                 },
             )

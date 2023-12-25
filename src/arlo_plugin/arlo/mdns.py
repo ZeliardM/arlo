@@ -29,7 +29,7 @@ class AsyncListener:
             item = {
                 'name': info.name,
                 'type': info.type,
-                'server': info.server.rstrip(info.server[-7]),
+                'server': info.server[:-7],
                 'address': addresses[0],
                 'port': info.port,
                 'deviceId': info.properties[b'deviceid'].decode("utf-8")
