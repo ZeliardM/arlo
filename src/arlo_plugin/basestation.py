@@ -47,7 +47,8 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         if self.has_local_live_streaming and not cert_registered:
             self.createCertificates()
 
-        await self.mdns()
+        if self.has_local_live_streaming:  
+            await self.mdns()
 
     def createCertificates(self) -> None:
         certificates = self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines()))
@@ -77,14 +78,22 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         return self.storage.getItem("ip_addr")
     
     @property
-    def host_name(self) -> str:
-        return self.storage.getItem("host_name")
+    def hostname(self) -> str:
+        return self.storage.getItem("hostname")
+    
+    @property
+    def mdns_boolean(self) -> bool:
+        return self.storage.getItem("mdns_boolean")
 
     async def mdns(self) -> None:
+        self.storage.setItem("ip_addr", None)
+        self.storage.setItem("host_name", None)
         mdns = AsyncBrowser()
         await mdns.async_run()
-        self.storage.setItem("ip_addr", mdns.services[self.arlo_device['deviceId']].get('address'))
-        self.storage.setItem("host_name", mdns.services[self.arlo_device['deviceId']].get('server'))
+        self.storage.setItem("mdns_boolean", bool(mdns.services))
+        if self.mdns_boolean == True:
+            self.storage.setItem("ip_addr", mdns.services[self.arlo_device['deviceId']].get('address'))
+            self.storage.setItem("hostname", mdns.services[self.arlo_device['deviceId']].get('server'))
 
     @property
     def peer_cert(self) -> str:
@@ -153,21 +162,27 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                     "title": "IP Address",
                     "description": "This is the IP Address of the basestation pulled from mDNS. " + \
                                    "This will be used for cameras that support local streaming. " + \
-                                   "Note that the basestation must be in the same network as Scrypted for this to work.",
+                                   "Note that the basestation must be in the same network as Scrypted for this to work. " + \
+                                   "If this is empty, it means mDNS failed to find your basestation, " + \
+                                   "You will have to input the IP Address into this field manually.",
                     "value": self.ip_addr,
-                    "readonly": True,
+                    "readonly": self.mdns_boolean,
                 },
             )
             result.append(
                 {
                     "group": "General",
-                    "key": "host_name",
-                    "title": "Host Name",
-                    "description": "This is the Host Name of the basestation pulled from mDNS. " + \
+                    "key": "hostname",
+                    "title": "Hostname",
+                    "description": "This is the Hostname of the basestation pulled from mDNS. " + \
                                    "This will be used for cameras that support local streaming. " + \
-                                   "Note that the basestation must be in the same network as Scrypted for this to work.",
-                    "value": self.host_name,
-                    "readonly": True,
+                                   "Note that the basestation must be in the same network as Scrypted for this to work."
+                                   "If this is empty, it means mDNS failed to find your basestation, " + \
+                                   "You will have to input the Hostname into this field manually, " + \
+                                   "Usually the model including the domain, i.e. ""VMB5000.local"" or ""VMB5000-2.local"" " + \
+                                   "if you have mutliple of the same model basestation.",
+                    "value": self.hostname,
+                    "readonly": self.mdns_boolean,
                 },
             )
         result.append(
@@ -184,6 +199,6 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     async def putSetting(self, key: str, value: SettingValue) -> None:
         if key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
-        elif key in ["ip_addr"]:
+        elif key in ["ip_addr", "hostname"]:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
