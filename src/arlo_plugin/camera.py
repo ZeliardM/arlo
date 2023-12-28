@@ -831,13 +831,16 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             if self.arlo_device["deviceId"] == self.arlo_basestation["deviceId"]:
                 raise Exception("This camera is not connected to a basestation, unable to use local stream.")
 
-            if basestation.ip_addr is None:
+            if basestation.ip_addr is None or not basestation.ip_addr:
                 raise Exception("Must specify the basestation's IP address to use local stream.")
+            
+            if basestation.hostname is None or not basestation.hostname:
+                raise Exception("Must specify the basestation's Hostname to use local stream.")
 
             proxy = scrypted_arlo_go.NewLocalStreamProxy(
                 self.info_logger.logger_server_port,
                 self.debug_logger.logger_server_port,
-                basestation.host_name,
+                basestation.hostname,
                 basestation.ip_addr,
                 basestation.peer_cert,
                 self.provider.arlo_private_key,

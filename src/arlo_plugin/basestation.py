@@ -87,7 +87,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     async def mdns(self) -> None:
         self.storage.setItem("ip_addr", None)
-        self.storage.setItem("host_name", None)
+        self.storage.setItem("hostname", None)
         mdns = AsyncBrowser()
         await mdns.async_run()
         self.storage.setItem("mdns_boolean", bool(mdns.services))
