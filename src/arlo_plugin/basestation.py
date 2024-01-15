@@ -47,7 +47,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         if self.has_local_live_streaming and not cert_registered:
             self.createCertificates()
 
-        if self.has_local_live_streaming:  
+        if self.has_local_live_streaming:
             await self.mdns()
 
     def createCertificates(self) -> None:
@@ -76,18 +76,18 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     @property
     def ip_addr(self) -> str:
         return self.storage.getItem("ip_addr")
-    
+
     @property
     def hostname(self) -> str:
         return self.storage.getItem("hostname")
-    
+
     @property
     def mdns_boolean(self) -> bool:
         return self.storage.getItem("mdns_boolean")
 
     async def mdns(self) -> None:
-        self.storage.setItem("ip_addr", None)
-        self.storage.setItem("hostname", None)
+        #self.storage.setItem("ip_addr", None)
+        #self.storage.setItem("hostname", None)
         mdns = AsyncBrowser()
         await mdns.async_run()
         self.storage.setItem("mdns_boolean", bool(mdns.services))
