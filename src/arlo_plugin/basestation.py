@@ -27,6 +27,11 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     def __init__(self, nativeId: str, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
+        # Set Certificates to None
+        self.storage.setItem("peer_cert", None)
+        self.storage.setItem("device_cert", None)
+        self.storage.setItem("ica_cert", None)
+        
         self.create_task(self.delayed_init())
 
     async def delayed_init(self) -> None:
@@ -37,14 +42,20 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                 return
 
             try:
+                self.logger.debug("Checking if Certificates are created with Arlo")
                 cert_registered = self.peer_cert
+                if cert_registered:
+                    self.logger.debug("Certificates have been created with Arlo, skipping Certificate Creation")
+                else:
+                    self.logger.debug("Certificates have not been created with Arlo, proceeding with Certificate Creation")
                 break
             except Exception as e:
                 self.logger.debug(f"Delayed init failed, will try again: {e}")
                 await asyncio.sleep(0.1)
             iterations += 1
 
-        if self.has_local_live_streaming and not cert_registered:
+        if self.has_local_live_streaming and not bool(cert_registered and not cert_registered.isspace()):
+            self.logger.debug("Creating Certificates with Arlo")
             self.createCertificates()
 
         if self.has_local_live_streaming:
@@ -52,18 +63,38 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     def createCertificates(self) -> None:
         certificates = self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines()))
-        self.parseCertificates(certificates)
+        if certificates:
+            self.logger.debug("Certificates have been created with Arlo, parsing certificates")
+            self.parseCertificates(certificates)
+        else:
+            self.logger.debug("Falied to create Certificates with Arlo")
 
     def parseCertificates(self, certificates: dict) -> None:
         peerCert = certificates['certsData'][0]['peerCert']
         deviceCert = certificates['certsData'][0]['deviceCert']
         icaCert = certificates['icaCert']
-        self.storeCertificates(peerCert, deviceCert, icaCert)
+        if peerCert and deviceCert and icaCert:
+            self.logger.debug("Certificates have been parsed, storing certificates")
+            self.storeCertificates(peerCert, deviceCert, icaCert)
+        else:
+            if not peerCert:
+                self.logger.debug("Falied to parse peer Certificate")
+            if not deviceCert:
+                self.logger.debug("Falied to parse device Certificate")
+            if not icaCert:
+                self.logger.debug("Falied to parse ICA Certificate")
 
     def storeCertificates(self, peerCert: str, deviceCert: str, icaCert: str) -> None:
-        self.storage.setItem("peer_cert", f'-----BEGIN CERTIFICATE-----\n{chr(10).join([peerCert[idx:idx+64] for idx in range(len(peerCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
-        self.storage.setItem("device_cert", f'-----BEGIN CERTIFICATE-----\n{chr(10).join([deviceCert[idx:idx+64] for idx in range(len(deviceCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
-        self.storage.setItem("ica_cert", f'-----BEGIN CERTIFICATE-----\n{chr(10).join([icaCert[idx:idx+64] for idx in range(len(icaCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----')
+        peerCert = f'-----BEGIN CERTIFICATE-----\n{chr(10).join([peerCert[idx:idx+64] for idx in range(len(peerCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----'
+        deviceCert = f'-----BEGIN CERTIFICATE-----\n{chr(10).join([deviceCert[idx:idx+64] for idx in range(len(deviceCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----'
+        icaCert = f'-----BEGIN CERTIFICATE-----\n{chr(10).join([icaCert[idx:idx+64] for idx in range(len(icaCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----'
+        self.storage.setItem("peer_cert", peerCert)
+        self.storage.setItem("device_cert", deviceCert)
+        self.storage.setItem("ica_cert", icaCert)
+        self.logger.debug("Certificates have been stored with Scrypted")
+        self.logger.debug(f"{self.peer_cert}")
+        self.logger.debug(f"{self.device_cert}")
+        self.logger.debug(f"{self.ica_cert}")
 
     @property
     def has_siren(self) -> bool:
@@ -199,6 +230,9 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     async def putSetting(self, key: str, value: SettingValue) -> None:
         if key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
+            self.logger.debug(f"{self.peer_cert}")
+            self.logger.debug(f"{self.device_cert}")
+            self.logger.debug(f"{self.ica_cert}")
         elif key in ["ip_addr", "hostname"]:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)

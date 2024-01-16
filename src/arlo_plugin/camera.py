@@ -825,6 +825,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.logger.info("Setting up local RTSP stream")
 
             basestation: ArloBasestation = await self.provider.getDevice_impl(self.arlo_basestation["deviceId"])
+
+            self.logger.debug(basestation.peer_cert)
+
             if basestation is None:
                 raise Exception("This camera's basestation is missing or hidden, unable to use local stream.")
 
@@ -836,6 +839,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             
             if basestation.hostname is None or not basestation.hostname:
                 raise Exception("Must specify the basestation's Hostname to use local stream.")
+            
+            if basestation.peer_cert is None or not basestation.peer_cert:
+                raise Exception("This basestation does not have a certificate, unable to use local stream.")
 
             proxy = scrypted_arlo_go.NewLocalStreamProxy(
                 self.info_logger.logger_server_port,
