@@ -235,6 +235,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if not self.has_battery:
             return
 
+        while self.provider.device_discovery_promise is None:
+            await asyncio.sleep(0.1)
+        await self.provider.device_discovery_promise
+
         iterations = 1
         while not self.stop_subscriptions:
             if iterations > 100:
@@ -836,10 +840,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
             if basestation.ip_addr is None or not basestation.ip_addr:
                 raise Exception("Must specify the basestation's IP address to use local stream.")
-            
+
             if basestation.hostname is None or not basestation.hostname:
                 raise Exception("Must specify the basestation's Hostname to use local stream.")
-            
+
             if basestation.peer_cert is None or not basestation.peer_cert:
                 raise Exception("This basestation does not have a certificate, unable to use local stream.")
 

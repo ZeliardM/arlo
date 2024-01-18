@@ -65,6 +65,10 @@ class ArloSecurityModeSecuritySystem(ArloDeviceBase, SecuritySystem, Settings, R
         self.create_task(self.onDeviceEvent(ScryptedInterface.Settings.value, None))
 
     async def delayed_init(self) -> None:
+        while self.provider.device_discovery_promise is None:
+            await asyncio.sleep(0.1)
+        await self.provider.device_discovery_promise
+
         iterations = 1
         while not self.stop_subscriptions:
             if iterations > 100:

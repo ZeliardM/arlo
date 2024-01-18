@@ -39,6 +39,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
     _arlo: Arlo = None
     _arlo_mfa_complete_auth = None
     device_discovery_lock: asyncio.Lock = None
+    _device_discovery_promise: asyncio.Future = None
 
     plugin_verbosity_choices = {
         "Normal": logging.INFO,
@@ -740,6 +741,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 return False
         return True
 
+    @property
+    def device_discovery_promise(self) -> asyncio.Future:
+        return self._device_discovery_promise
+
     @async_print_exception_guard
     async def discover_devices(self) -> None:
         async with self.device_discovery_lock:
@@ -755,6 +760,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         self.arlo_smss = {}
         self.all_device_ids = set()
         self.scrypted_devices = {}
+        self._device_discovery_promise = asyncio.Future()
 
         basestation_devices = []
         camera_devices = []
@@ -945,6 +951,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
         # force a settings refresh so the hidden devices list can be updated
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
+        self._device_discovery_promise.set_result(None)
 
     async def getDevice(self, nativeId: str) -> ArloDeviceBase:
         self.logger.debug(f"Scrypted requested to load device {nativeId}")

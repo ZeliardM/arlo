@@ -27,14 +27,18 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     def __init__(self, nativeId: str, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
+        self.create_task(self.delayed_init())
+
+    async def delayed_init(self) -> None:
+        while self.provider.device_discovery_promise is None:
+            await asyncio.sleep(0.1)
+        await self.provider.device_discovery_promise
+
         # Set Certificates to None
         self.storage.setItem("peer_cert", None)
         self.storage.setItem("device_cert", None)
         self.storage.setItem("ica_cert", None)
-        
-        self.create_task(self.delayed_init())
 
-    async def delayed_init(self) -> None:
         iterations = 1
         while True:
             if iterations > 100:
