@@ -34,11 +34,6 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             await asyncio.sleep(0.1)
         await self.provider.device_discovery_promise
 
-        # Set Certificates to None
-        self.storage.setItem("peer_cert", None)
-        self.storage.setItem("device_cert", None)
-        self.storage.setItem("ica_cert", None)
-
         iterations = 1
         while True:
             if iterations > 100:
@@ -58,7 +53,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                 await asyncio.sleep(0.1)
             iterations += 1
 
-        if self.has_local_live_streaming and not bool(cert_registered and not cert_registered.isspace()):
+        if self.has_local_live_streaming and not cert_registered:
             self.logger.debug("Creating Certificates with Arlo")
             self.createCertificates()
 
@@ -96,9 +91,9 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         self.storage.setItem("device_cert", deviceCert)
         self.storage.setItem("ica_cert", icaCert)
         self.logger.debug("Certificates have been stored with Scrypted")
-        self.logger.debug(f"{self.peer_cert}")
-        self.logger.debug(f"{self.device_cert}")
-        self.logger.debug(f"{self.ica_cert}")
+        self.logger.debug(f'Peer Certificate:\n{self.peer_cert}')
+        self.logger.debug(f'Device Certificate:\n{self.device_cert}')
+        self.logger.debug(f'ICA Certificate:\n{self.ica_cert}')
 
     @property
     def has_siren(self) -> bool:
