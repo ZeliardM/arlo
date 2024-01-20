@@ -196,9 +196,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     ]
 
     MODELS_WITH_SIP_PUSH_TO_TALK = [
-        "avd1001",
-        "avd2001",
-        "vmc2030b",
     ]
 
     timeout: int = 30
