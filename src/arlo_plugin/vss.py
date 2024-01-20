@@ -27,7 +27,6 @@ class ArloSirenVirtualSecuritySystem(ArloDeviceBase, SecuritySystem, Settings, R
     def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, provider: ArloProvider, parent: ArloBasestation | ArloCamera) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, provider=provider)
         self.parent = parent
-        self.create_task(self.delayed_init())
 
     @property
     def mode(self) -> str:
@@ -48,27 +47,10 @@ class ArloSirenVirtualSecuritySystem(ArloDeviceBase, SecuritySystem, Settings, R
         self.create_task(self.onDeviceEvent(ScryptedInterface.Settings.value, None))
 
     async def delayed_init(self) -> None:
-        while self.provider.device_discovery_promise is None:
-            await asyncio.sleep(0.1)
-        await self.provider.device_discovery_promise
-
-        iterations = 1
-        while not self.stop_subscriptions:
-            if iterations > 100:
-                self.logger.error("Delayed init exceeded iteration limit, giving up")
-                return
-
-            try:
-                await asyncio.sleep(0.1)
-                self.securitySystemState = {
-                    "supportedModes": ArloSirenVirtualSecuritySystem.SUPPORTED_MODES,
-                    "mode": self.mode,
-                }
-                return
-            except Exception as e:
-                self.logger.debug(f"Delayed init failed, will try again: {e}")
-                await asyncio.sleep(0.1)
-            iterations += 1
+        self.securitySystemState = {
+            "supportedModes": ArloSirenVirtualSecuritySystem.SUPPORTED_MODES,
+            "mode": self.mode,
+        }
 
     def get_applicable_interfaces(self) -> List[str]:
         return [

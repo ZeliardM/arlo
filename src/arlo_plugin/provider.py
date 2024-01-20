@@ -739,9 +739,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 return False
         return True
 
-    @property
-    def device_discovery_promise(self) -> asyncio.Future:
-        return self._device_discovery_promise
+    async def device_discovery_done(self) -> None:
+        while self._device_discovery_promise is None:
+            await asyncio.sleep(0.1)
+        await self._device_discovery_promise
 
     @async_print_exception_guard
     async def discover_devices(self) -> None:

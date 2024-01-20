@@ -223,30 +223,11 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_battery_subscription()
         self.start_brightness_subscription()
         self.start_smart_motion_subscription()
-        self.create_task(self.delayed_init())
 
     async def delayed_init(self) -> None:
         if not self.has_battery:
             return
-
-        while self.provider.device_discovery_promise is None:
-            await asyncio.sleep(0.1)
-        await self.provider.device_discovery_promise
-
-        iterations = 1
-        while not self.stop_subscriptions:
-            if iterations > 100:
-                self.logger.error("Delayed init exceeded iteration limit, giving up")
-                return
-
-            try:
-                await asyncio.sleep(0.1)
-                self.chargeState = ChargeState.Charging.value if self.wired_to_power else ChargeState.NotCharging.value
-                return
-            except Exception as e:
-                self.logger.debug(f"Delayed init failed, will try again: {e}")
-                await asyncio.sleep(0.1)
-            iterations += 1
+        self.chargeState = ChargeState.Charging.value if self.wired_to_power else ChargeState.NotCharging.value
 
     def start_error_subscription(self) -> None:
         def callback(code, message):

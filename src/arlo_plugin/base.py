@@ -42,6 +42,16 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
             self.logger.warning(f"Could not load device capabilities: {e}")
             self.arlo_capabilities = {}
 
+        self.create_task(self._do_delayed_init())
+
+    async def _do_delayed_init(self) -> None:
+        await self.provider.device_discovery_done()
+        await self.delayed_init()
+
+    async def delayed_init(self) -> None:
+        """Override this function to perform initialization after device discovery is complete."""
+        pass
+
     def __del__(self) -> None:
         self.stop_subscriptions = True
         self.cancel_pending_tasks()

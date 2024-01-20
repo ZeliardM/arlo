@@ -27,31 +27,14 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     def __init__(self, nativeId: str, arlo_basestation: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
-        self.create_task(self.delayed_init())
 
     async def delayed_init(self) -> None:
-        while self.provider.device_discovery_promise is None:
-            await asyncio.sleep(0.1)
-        await self.provider.device_discovery_promise
-
-        iterations = 1
-        while True:
-            if iterations > 100:
-                self.logger.error("Delayed init exceeded iteration limit, giving up")
-                return
-
-            try:
-                self.logger.debug("Checking if Certificates are created with Arlo")
-                cert_registered = self.peer_cert
-                if cert_registered:
-                    self.logger.debug("Certificates have been created with Arlo, skipping Certificate Creation")
-                else:
-                    self.logger.debug("Certificates have not been created with Arlo, proceeding with Certificate Creation")
-                break
-            except Exception as e:
-                self.logger.debug(f"Delayed init failed, will try again: {e}")
-                await asyncio.sleep(0.1)
-            iterations += 1
+        self.logger.debug("Checking if Certificates are created with Arlo")
+        cert_registered = self.peer_cert
+        if cert_registered:
+            self.logger.debug("Certificates have been created with Arlo, skipping Certificate Creation")
+        else:
+            self.logger.debug("Certificates have not been created with Arlo, proceeding with Certificate Creation")
 
         if self.has_local_live_streaming and not cert_registered:
             self.logger.info("Creating Certificates with Arlo")
@@ -98,7 +81,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.provider.arlo.GetDeviceCapabilities(self.arlo_device).get("Capabilities", {}).get("sipLiveStream", False) and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
+        return self.arlo_capabilities.get("Capabilities", {}).get("sipLiveStream", False) and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
 
     @property
     def ip_addr(self) -> str:
