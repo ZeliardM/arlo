@@ -229,9 +229,9 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     async def putSetting(self, key: str, value: SettingValue) -> None:
         if key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
-            self.logger.debug(f"{self.peer_cert}")
-            self.logger.debug(f"{self.device_cert}")
-            self.logger.debug(f"{self.ica_cert}")
+            self.logger.debug(f'Peer Certificate:\n{self.peer_cert}')
+            self.logger.debug(f'Device Certificate:\n{self.device_cert}')
+            self.logger.debug(f'ICA Certificate:\n{self.ica_cert}')
         elif key in ["ip_addr", "hostname"]:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
