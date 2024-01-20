@@ -195,9 +195,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         "vmc3060",
     ]
 
-    MODELS_WITH_SIP_PUSH_TO_TALK = [
-    ]
-
     timeout: int = 30
     intercom_session: ArloCameraIntercomSession = None
     light: ArloSpotlight = None
@@ -469,10 +466,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @property
     def uses_sip_push_to_talk(self) -> bool:
-        if any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITH_SIP_PUSH_TO_TALK]):
-            return True
-        else:
-            return "sip" in self.arlo_capabilities.get("Capabilities", {}).get("PushToTalk", {}).get("signal", [])
+        return "sip" in self.arlo_capabilities.get("Capabilities", {}).get("PushToTalk", {}).get("signal", [])
 
     @property
     def has_sip_webrtc_streaming(self) -> bool:
