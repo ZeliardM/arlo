@@ -835,8 +835,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
             if basestation.peer_cert is None or not basestation.peer_cert:
                 raise Exception("This basestation does not have a certificate, unable to use local stream.")
-            
-            self.logger.debug(f'{basestation.nativeId} Peer Certificate:\n{basestation.peer_cert}')
 
             proxy = scrypted_arlo_go.NewLocalStreamProxy(
                 self.info_logger.logger_server_port,

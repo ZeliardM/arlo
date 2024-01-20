@@ -116,8 +116,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         public_key, private_key = keys.PublicPEM, keys.PrivatePEM
         self.storage.setItem("arlo_public_key", public_key)
         self.storage.setItem("arlo_private_key", private_key)
-        self.logger.debug(f'Public Key:\n{self.arlo_public_key}')
-        self.logger.debug(f'Private Key:\n{self.arlo_private_key}')
         return public_key, private_key
 
     @property

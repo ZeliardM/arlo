@@ -54,7 +54,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             iterations += 1
 
         if self.has_local_live_streaming and not cert_registered:
-            self.logger.debug("Creating Certificates with Arlo")
+            self.logger.info("Creating Certificates with Arlo")
             self.createCertificates()
 
         if self.has_local_live_streaming:
@@ -63,25 +63,25 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     def createCertificates(self) -> None:
         certificates = self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines()))
         if certificates:
-            self.logger.debug("Certificates have been created with Arlo, parsing certificates")
+            self.logger.info("Certificates have been created with Arlo, parsing certificates")
             self.parseCertificates(certificates)
         else:
-            self.logger.debug("Falied to create Certificates with Arlo")
+            self.logger.error("Failed to create Certificates with Arlo")
 
     def parseCertificates(self, certificates: dict) -> None:
         peerCert = certificates['certsData'][0]['peerCert']
         deviceCert = certificates['certsData'][0]['deviceCert']
         icaCert = certificates['icaCert']
         if peerCert and deviceCert and icaCert:
-            self.logger.debug("Certificates have been parsed, storing certificates")
+            self.logger.info("Certificates have been parsed, storing certificates")
             self.storeCertificates(peerCert, deviceCert, icaCert)
         else:
             if not peerCert:
-                self.logger.debug("Falied to parse peer Certificate")
+                self.logger.error("Failed to parse peer Certificate")
             if not deviceCert:
-                self.logger.debug("Falied to parse device Certificate")
+                self.logger.error("Failed to parse device Certificate")
             if not icaCert:
-                self.logger.debug("Falied to parse ICA Certificate")
+                self.logger.error("Failed to parse ICA Certificate")
 
     def storeCertificates(self, peerCert: str, deviceCert: str, icaCert: str) -> None:
         peerCert = f'-----BEGIN CERTIFICATE-----\n{chr(10).join([peerCert[idx:idx+64] for idx in range(len(peerCert)) if idx % 64 == 0])}\n-----END CERTIFICATE-----'
@@ -90,10 +90,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         self.storage.setItem("peer_cert", peerCert)
         self.storage.setItem("device_cert", deviceCert)
         self.storage.setItem("ica_cert", icaCert)
-        self.logger.debug("Certificates have been stored with Scrypted")
-        self.logger.debug(f'Peer Certificate:\n{self.peer_cert}')
-        self.logger.debug(f'Device Certificate:\n{self.device_cert}')
-        self.logger.debug(f'ICA Certificate:\n{self.ica_cert}')
+        self.logger.info("Certificates have been stored with Scrypted")
 
     @property
     def has_siren(self) -> bool:
