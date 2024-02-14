@@ -41,7 +41,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             self.createCertificates()
 
         if self.has_local_live_streaming:
-            await self.mdns(self)
+            await self.mdns()
 
     def createCertificates(self) -> None:
         certificates = self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines()))
@@ -95,16 +95,25 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     def mdns_boolean(self) -> bool:
         return self.storage.getItem("mdns_boolean")
 
-    async def mdns(self, basestation: ArloBasestation) -> None:
-        #self.storage.setItem("ip_addr", None)
-        #self.storage.setItem("hostname", None)
+    async def mdns(self) -> None:
         self.storage.setItem("mdns_boolean", False)
-        mdns = AsyncBrowser(basestation)
-        await mdns.async_run()
-        self.storage.setItem("mdns_boolean", bool(mdns.services))
-        if self.mdns_boolean == True:
-            self.storage.setItem("ip_addr", mdns.services[self.arlo_device['deviceId']].get('address'))
-            self.storage.setItem("hostname", mdns.services[self.arlo_device['deviceId']].get('server'))
+        self.logger.info("Initializing mDNS Discovery for basestation.")
+        for i in range(5):
+            try:
+                mdns = AsyncBrowser()
+                await mdns.async_run()
+                self.storage.setItem("mdns_boolean", bool(mdns.services))
+                if self.mdns_boolean == True:
+                    self.logger.info("Basestation found in mDNS.")
+                    self.storage.setItem("ip_addr", mdns.services[self.arlo_device['deviceId']].get('address'))
+                    self.storage.setItem("hostname", mdns.services[self.arlo_device['deviceId']].get('server'))
+                    break
+            except:
+                self.logger.info("Basestation not found, trying mDNS again.")
+
+            await asyncio.sleep(0.5)
+        else:
+            self.logger.error("Basestation not found in mDNS, manual input needed under basestation settings.")
 
     @property
     def peer_cert(self) -> str:
