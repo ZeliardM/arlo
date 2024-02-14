@@ -104,7 +104,10 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                 await mdns.async_run()
                 self.storage.setItem("mdns_boolean", bool(mdns.services))
                 if self.mdns_boolean == True:
-                    self.logger.info("Basestation found in mDNS.")
+                    if i == 0:
+                        self.logger.info(f"Basestation found in mDNS, took {i+1} try.")
+                    else:
+                        self.logger.info(f"Basestation found in mDNS, took {i+1} tries.")
                     self.storage.setItem("ip_addr", mdns.services[self.arlo_device['deviceId']].get('address'))
                     self.storage.setItem("hostname", mdns.services[self.arlo_device['deviceId']].get('server'))
                     break
