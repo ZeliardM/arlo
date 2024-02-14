@@ -7,6 +7,7 @@ from zeroconf.asyncio import (
     AsyncServiceInfo,
     AsyncZeroconf,
 )
+from .. import basestation
 
 class AsyncListener:
     def __init__(self) -> None:
@@ -37,20 +38,26 @@ class AsyncListener:
             self.services.update({item['deviceId']:item})
 
 class AsyncBrowser:
-    def __init__(self) -> None:
+    def __init__(self, basestation: basestation) -> None:
         self.aiobrowser: Optional[AsyncServiceBrowser] = None
         self.aiozc: Optional[AsyncZeroconf] = None
         self.aiolistener: Optional[AsyncListener] = None
         self.services = {}
+        self.basestation = basestation
 
     async def async_run(self) -> None:
         self.aiozc = AsyncZeroconf()
         self.aiolistener = AsyncListener()
         services = ["_arlo-video._tcp.local."]
-        self.aiobrowser = AsyncServiceBrowser(
-            self.aiozc.zeroconf, services, handlers=[self.aiolistener.async_on_service_state_change]
-        )
-        await asyncio.sleep(1)
+        self.basestation.logger.info("Initializing mDNS for basestation discovery")
+        try:
+            self.aiobrowser = AsyncServiceBrowser(
+                self.aiozc.zeroconf, services, handlers=[self.aiolistener.async_on_service_state_change]
+            )
+            await asyncio.sleep(10)
+        except Exception:
+            self.basestation.logger.exception("Error discovering basestation with mDNS")
+            raise
         self.services = self.aiolistener.services
         await self.async_close()
 
