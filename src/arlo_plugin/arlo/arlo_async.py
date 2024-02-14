@@ -1139,6 +1139,28 @@ class Arlo(object):
             }
         })
 
+    def CameraOff(self, basestation, camera):
+        resource = f"cameras/{camera.get('deviceId')}"
+        return self.Notify(basestation, {
+            "action": "set",
+            "resource": resource,
+            "publishResponse": True,
+            "properties": {
+                "privacyActive": True,
+            },
+        })
+
+    def CameraOn(self, basestation, camera):
+        resource = f"cameras/{camera.get('deviceId')}"
+        return self.Notify(basestation, {
+            "action": "set",
+            "resource": resource,
+            "publishResponse": True,
+            "properties": {
+                "privacyActive": False,
+            },
+        })
+
     def GetLocations(self) -> list:
         locations = self._getLocations()
         locationList = {}

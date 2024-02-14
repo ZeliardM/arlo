@@ -378,6 +378,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         return results
 
     @property
+    def disable_camera(self) -> bool:
+        if self.storage:
+            return True if self.storage.getItem("disable_camera") else False
+        else:
+            return False
+        
+    @property
     def wired_to_power(self) -> bool:
         if self.storage:
             return True if self.storage.getItem("wired_to_power") else False
@@ -482,6 +489,18 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     async def getSettings(self) -> List[Setting]:
         result = []
+        result.append(
+                {
+                    "group": "General",
+                    "key": "disable_camera",
+                    "title": "Disable Camera",
+                    "value": self.disable_camera,
+                    "description": "Disables the camera in Arlo Cloud. " + \
+                                   "The camera will not respond to any motion or send notifications. " + \
+                                   "This will disable recording for this camera as well.",
+                    "type": "boolean",
+                },
+            )
         if self.has_battery:
             result.append(
                 {
@@ -574,7 +593,15 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
             return
 
-        if key in ["wired_to_power", "disable_sip_webrtc_streaming"]:
+        if key == "disable_camera":
+            self.storage.setItem(key, value == "true" or value == True)
+            if value == "true" or value == True:
+                self.logger.info("Disabling Camera")
+                self.provider.arlo.CameraOff(self.arlo_basestation, self.arlo_device)
+            else:
+                self.logger.info("Enabling Camera")
+                self.provider.arlo.CameraOn(self.arlo_basestation, self.arlo_device)
+        elif key in ["wired_to_power", "disable_sip_webrtc_streaming"]:
             self.storage.setItem(key, value == "true" or value == True)
             await self.provider.discover_devices()
         elif key in ["eco_mode", "disable_eager_streams"]:
