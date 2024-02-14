@@ -217,6 +217,15 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                 "type": "button",
             },
         )
+        result.append(
+            {
+                "group": "General",
+                "key": "restart_device",
+                "title": "Restart Device",
+                "description": "Restarts the Device.",
+                "type": "button",
+            },
+        )
         return result
 
     async def putSetting(self, key: str, value: SettingValue) -> None:
@@ -225,6 +234,9 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             self.logger.debug(f'Peer Certificate:\n{self.peer_cert}')
             self.logger.debug(f'Device Certificate:\n{self.device_cert}')
             self.logger.debug(f'ICA Certificate:\n{self.ica_cert}')
+        elif key == "restart_device":
+            self.logger.info("Restarting Device")
+            self.provider.arlo.RestartDevice(self.arlo_device["deviceId"])
         elif key in ["ip_addr", "hostname"]:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)

@@ -1208,6 +1208,19 @@ class Arlo(object):
         self.request.put(f'https://{self.BASE_URL}/hmsweb/automation/v3/activeMode?locationId={location}&revision={nextrevision}', params=params, headers=headers)
         return
 
+    def RestartDevice(self, deviceId: str) -> None:
+        headers = {
+            'Origin': f'https://{self.BASE_URL}',
+            'Referer': f'https://{self.BASE_URL}/',
+            'x-user-device-id': self.device_id,
+            'x-forwarded-user': self.user_id,
+        }
+        params = {
+            'deviceId': deviceId,
+        }
+        self.request.post(f'https://{self.BASE_URL}/hmsweb/users/devices/restart', params=params, headers=headers)
+        return
+
     def GetLibrary(self, device, from_date: datetime, to_date: datetime, no_cache=False):
         """
         This call returns the following:
