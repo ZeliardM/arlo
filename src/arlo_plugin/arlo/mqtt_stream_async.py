@@ -44,7 +44,7 @@ class MQTTStream(Stream):
             if response.get('resource') is not None:
                 self.event_loop.call_soon_threadsafe(self._queue_response, response)
 
-        self.event_stream = mqtt.Client(client_id=f"user_{self.arlo.user_id}_{self._gen_client_number()}", transport="tcp", clean_session=False)
+        self.event_stream = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=f"user_{self.arlo.user_id}_{self._gen_client_number()}", transport="tcp", clean_session=False)
         self.event_stream.username_pw_set(self.arlo.user_id, password=self.arlo.request.session.headers.get('Authorization'))
         self.event_stream.ws_set_options(path="/mqtt", headers={"Origin": "https://my.arlo.com"})
         self.event_stream.on_connect = on_connect
