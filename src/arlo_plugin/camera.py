@@ -585,6 +585,16 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 "type": "button",
             }
         )
+        if self.arlo_device["deviceId"] == self.arlo_device["parentId"]:
+            result.append(
+                {
+                    "group": "General",
+                    "key": "restart_device",
+                    "title": "Restart Device",
+                    "description": "Restarts the Device.",
+                    "type": "button",
+                },
+            )
         return result
 
     @async_print_exception_guard
@@ -601,6 +611,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             else:
                 self.logger.info("Enabling Camera")
                 self.provider.arlo.CameraOn(self.arlo_basestation, self.arlo_device)
+        elif key == "restart_device":
+            self.logger.info("Restarting Device")
+            self.provider.arlo.RestartDevice(self.arlo_device["deviceId"])
         elif key in ["wired_to_power", "disable_sip_webrtc_streaming"]:
             self.storage.setItem(key, value == "true" or value == True)
             await self.provider.discover_devices()
