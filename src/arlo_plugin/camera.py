@@ -13,7 +13,7 @@ from typing import List, TYPE_CHECKING
 import scrypted_arlo_go
 
 import scrypted_sdk
-from scrypted_sdk.types import Brightness, Setting, Settings, SettingValue, Device, Camera, VideoCamera, ObjectDetector, ObjectDetectionTypes, RequestMediaStreamOptions, VideoClips, VideoClip, VideoClipOptions, MotionSensor, AudioSensor, Battery, Charger, ChargeState, DeviceProvider, MediaObject, ResponsePictureOptions, ResponseMediaStreamOptions, ScryptedMimeTypes, ScryptedInterface, ScryptedDeviceType
+from scrypted_sdk.types import Brightness, Setting, Settings, SettingValue, Device, Camera, VideoCamera, ObjectDetector, ObjectDetectionTypes, RequestMediaStreamOptions, VideoClips, VideoClip, VideoClipOptions, MotionSensor, AudioSensor, Battery, Charger, ChargeState, DeviceProvider, MediaObject, ResponsePictureOptions, ResponseMediaStreamOptions, ScryptedMimeTypes, ScryptedInterface, ScryptedDeviceType, OnOff
 
 from .experimental import EXPERIMENTAL
 from .arlo.arlo_async import USER_AGENTS
@@ -101,7 +101,7 @@ class ArloCameraIntercomSession(BackgroundTaskMixin):
         raise NotImplementedError("not implemented")
 
 
-class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, ObjectDetector, DeviceProvider, VideoClips, MotionSensor, AudioSensor, Battery, Charger):
+class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, ObjectDetector, DeviceProvider, VideoClips, MotionSensor, AudioSensor, Battery, Charger, OnOff):
     SCRYPTED_TO_ARLO_BRIGHTNESS_MAP = {
         0: -2,
         25: -1,
@@ -195,6 +195,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         "vmc3060",
     ]
 
+    MODELS_WITHOUT_PRIVACY = [
+        "avd1001",
+        "avd2001",
+        "avd3001",
+        "avd4001",
+    ]
+
     timeout: int = 30
     intercom_session: ArloCameraIntercomSession = None
     light: ArloSpotlight = None
@@ -222,6 +229,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_audio_subscription()
         self.start_battery_subscription()
         self.start_brightness_subscription()
+        self.start_privacy_subscription()
         self.start_smart_motion_subscription()
 
     async def delayed_init(self) -> None:
@@ -280,6 +288,15 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.provider.arlo.SubscribeToBrightnessEvents(self.arlo_basestation, self.arlo_device, callback)
         )
 
+    def start_privacy_subscription(self) -> None:
+        def callback(privacy):
+            self.on = not privacy
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToPrivacyEvents(self.arlo_basestation, self.arlo_device, callback)
+        )
+
     def start_smart_motion_subscription(self) -> None:
         # keep track of the last seen timestamp so we do not trigger the same event multiple times
         last_seen_timestamp = 0
@@ -316,6 +333,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             ScryptedInterface.ObjectDetector.value,
             ScryptedInterface.Brightness.value,
         ])
+
+        if not any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITHOUT_PRIVACY]):
+            results.add(ScryptedInterface.OnOff.value)
 
         if self.has_sip_webrtc_streaming and not self.disable_sip_webrtc_streaming:
             results.add(ScryptedInterface.RTCSignalingChannel.value)
@@ -376,14 +396,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 },
             ] + vss.get_builtin_child_device_manifests())
         return results
-
-    @property
-    def disable_camera(self) -> bool:
-        if self.storage:
-            return True if self.storage.getItem("disable_camera") else False
-        else:
-            return False
-        
+ 
     @property
     def wired_to_power(self) -> bool:
         if self.storage:
@@ -489,18 +502,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     async def getSettings(self) -> List[Setting]:
         result = []
-        result.append(
-                {
-                    "group": "General",
-                    "key": "disable_camera",
-                    "title": "Disable Camera",
-                    "value": self.disable_camera,
-                    "description": "Disables the camera in Arlo Cloud. " + \
-                                   "The camera will not respond to any motion or send notifications. " + \
-                                   "This will disable recording for this camera as well.",
-                    "type": "boolean",
-                },
-            )
         if self.has_battery:
             result.append(
                 {
@@ -603,15 +604,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
             return
 
-        if key == "disable_camera":
-            self.storage.setItem(key, value == "true" or value == True)
-            if value == "true" or value == True:
-                self.logger.info("Disabling Camera")
-                self.provider.arlo.CameraOff(self.arlo_basestation, self.arlo_device)
-            else:
-                self.logger.info("Enabling Camera")
-                self.provider.arlo.CameraOn(self.arlo_basestation, self.arlo_device)
-        elif key == "restart_device":
+        if key == "restart_device":
             self.logger.info("Restarting Device")
             self.provider.arlo.RestartDevice(self.arlo_device["deviceId"])
         elif key in ["wired_to_power", "disable_sip_webrtc_streaming"]:
@@ -1059,6 +1052,18 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if brightness not in ArloCamera.SCRYPTED_TO_ARLO_BRIGHTNESS_MAP:
             raise Exception("valid brightness levels are 0, 25, 50, 75, 100")
         self.provider.arlo.AdjustBrightness(self.arlo_basestation, self.arlo_device, ArloCamera.SCRYPTED_TO_ARLO_BRIGHTNESS_MAP[brightness])
+
+    @async_print_exception_guard
+    async def turnOn(self) -> None:
+        self.logger.info("Enabling Camera")
+        self.provider.arlo.CameraOn(self.arlo_basestation, self.arlo_device)
+        self.on = True
+
+    @async_print_exception_guard
+    async def turnOff(self) -> None:
+        self.logger.info("Disabling Camera")
+        self.provider.arlo.CameraOff(self.arlo_basestation, self.arlo_device)
+        self.on = False
 
 
 class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):

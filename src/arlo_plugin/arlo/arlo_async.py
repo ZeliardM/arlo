@@ -613,6 +613,35 @@ class Arlo(object):
         return asyncio.get_event_loop().create_task(
             self.HandleEvents(basestation, resource, [('is', 'brightness')], callbackwrapper)
         )
+    
+    def SubscribeToPrivacyEvents(self, basestation, camera, callback):
+        """
+        Use this method to subscribe to camera privacy events. You must provide a callback function which will get called once per privacy event.
+
+        Technically speaking, Arlo doesn't produce privacy events. This is used as a callback for when privacy is modified by the user.
+
+        The callback function should have the following signature:
+        def callback(event)
+
+        This is an example of handling a specific event, in reality, you'd probably want to write a callback for HandleEvents()
+        that has a big switch statement in it to handle all the various events Arlo produces.
+
+        Returns the Task object that contains the subscription loop.
+        """
+        resource = f"cameras/{camera.get('deviceId')}"
+
+        def callbackwrapper(self, event):
+            properties = event.get('properties', {})
+            stop = None
+            if 'privacyActive' in properties:
+                stop = callback(properties['privacyActive'])
+            if not stop:
+                return None
+            return stop
+
+        return asyncio.get_event_loop().create_task(
+            self.HandleEvents(basestation, resource, [('is', 'privacyActive')], callbackwrapper)
+        )
 
     def SubscribeToDoorbellEvents(self, basestation, doorbell, callback):
         """
