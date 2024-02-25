@@ -129,6 +129,10 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     @property
     def ica_cert(self) -> str:
         return self.storage.getItem("ica_cert")
+    
+    @property
+    def smart_features(self) -> dict:
+        return self.provider.arlo.GetSmartFeatures(self.arlo_device)
 
     def get_applicable_interfaces(self) -> List[str]:
         return [
@@ -231,6 +235,8 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     async def putSetting(self, key: str, value: SettingValue) -> None:
         if key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
+            self.logger.info(f"Smart Features: {json.dumps(self.smart_features)}")
+            self.logger.info(f"Basestation State: {await self.provider.arlo.TriggerBasestationProperties(self.arlo_basestation)}")
             self.logger.debug(f'Peer Certificate:\n{self.peer_cert}')
             self.logger.debug(f'Device Certificate:\n{self.device_cert}')
             self.logger.debug(f'ICA Certificate:\n{self.ica_cert}')

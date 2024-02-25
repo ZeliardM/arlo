@@ -183,8 +183,8 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     ]
 
     MODELS_WITH_SIP_STREAMING = [
-        "avd1001",
-        "avd2001",
+        "avd1001a",
+        "avd2001a",
         "avd3001",
         "avd4001",
         "vmc2050",
@@ -195,7 +195,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         "vmc3060",
     ]
 
-    MODELS_WITHOUT_PRIVACY = [
+    MODELS_WITHOUT_STATUS_INDICATOR = [
         "avd1001",
         "avd2001",
         "avd3001",
@@ -229,7 +229,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_audio_subscription()
         self.start_battery_subscription()
         self.start_brightness_subscription()
-        self.start_privacy_subscription()
+        self.start_status_indicator_subscription()
         self.start_smart_motion_subscription()
 
     async def delayed_init(self) -> None:
@@ -288,13 +288,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.provider.arlo.SubscribeToBrightnessEvents(self.arlo_basestation, self.arlo_device, callback)
         )
 
-    def start_privacy_subscription(self) -> None:
-        def callback(privacy):
-            self.on = not privacy
+    def start_status_indicator_subscription(self) -> None:
+        def callback(status_indicator):
+            self.on = not status_indicator
             return self.stop_subscriptions
 
         self.register_task(
-            self.provider.arlo.SubscribeToPrivacyEvents(self.arlo_basestation, self.arlo_device, callback)
+            self.provider.arlo.SubscribeToStatusIndicatorEvents(self.arlo_basestation, self.arlo_device, callback)
         )
 
     def start_smart_motion_subscription(self) -> None:
@@ -334,7 +334,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             ScryptedInterface.Brightness.value,
         ])
 
-        if not any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITHOUT_PRIVACY]):
+        if not any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITHOUT_STATUS_INDICATOR]) and self.enable_homekit_status_indicator:
             results.add(ScryptedInterface.OnOff.value)
 
         if self.has_sip_webrtc_streaming and not self.disable_sip_webrtc_streaming:
@@ -615,6 +615,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         elif key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
             self.logger.info(f"Smart Features: {json.dumps(self.smart_features)}")
+            self.logger.info(f"Camera State: {await self.provider.arlo.TriggerCameraExtendedProperties(self.arlo_basestation, self.arlo_device)}")
         else:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
@@ -1055,14 +1056,14 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @async_print_exception_guard
     async def turnOn(self) -> None:
-        self.logger.info("Enabling Camera")
-        self.provider.arlo.CameraOn(self.arlo_basestation, self.arlo_device)
+        self.logger.info("Enabling Camera Status Indicator Light.")
+        self.provider.arlo.StatusIndicatorOn(self.arlo_basestation, self.arlo_device)
         self.on = True
 
     @async_print_exception_guard
     async def turnOff(self) -> None:
-        self.logger.info("Disabling Camera")
-        self.provider.arlo.CameraOff(self.arlo_basestation, self.arlo_device)
+        self.logger.info("Disabling Camera Status Indicator Light.")
+        self.provider.arlo.StatusIndicatorOff(self.arlo_basestation, self.arlo_device)
         self.on = False
 
 

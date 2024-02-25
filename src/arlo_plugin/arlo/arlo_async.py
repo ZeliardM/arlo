@@ -614,7 +614,7 @@ class Arlo(object):
             self.HandleEvents(basestation, resource, [('is', 'brightness')], callbackwrapper)
         )
     
-    def SubscribeToPrivacyEvents(self, basestation, camera, callback):
+    def SubscribeToStatusIndicatorEvents(self, basestation, camera, callback):
         """
         Use this method to subscribe to camera privacy events. You must provide a callback function which will get called once per privacy event.
 
@@ -634,13 +634,13 @@ class Arlo(object):
             properties = event.get('properties', {})
             stop = None
             if 'privacyActive' in properties:
-                stop = callback(properties['privacyActive'])
+                stop = callback(properties['chargeNotificationLedEnable'])
             if not stop:
                 return None
             return stop
 
         return asyncio.get_event_loop().create_task(
-            self.HandleEvents(basestation, resource, [('is', 'privacyActive')], callbackwrapper)
+            self.HandleEvents(basestation, resource, [('is', 'chargeNotificationLedEnable')], callbackwrapper)
         )
 
     def SubscribeToDoorbellEvents(self, basestation, doorbell, callback):
@@ -1168,27 +1168,98 @@ class Arlo(object):
             }
         })
 
-    def CameraOff(self, basestation, camera):
+    def StatusIndicatorOff(self, basestation, camera):
         resource = f"cameras/{camera.get('deviceId')}"
         return self.Notify(basestation, {
             "action": "set",
             "resource": resource,
             "publishResponse": True,
             "properties": {
-                "privacyActive": True,
+                "chargeNotificationLedEnable": True,
             },
         })
 
-    def CameraOn(self, basestation, camera):
+    def StatusIndicatorOn(self, basestation, camera):
         resource = f"cameras/{camera.get('deviceId')}"
         return self.Notify(basestation, {
             "action": "set",
             "resource": resource,
             "publishResponse": True,
             "properties": {
-                "privacyActive": False,
+                "chargeNotificationLedEnable": False,
             },
         })
+
+    async def TriggerBasestationProperties(self, basestation):
+        """
+        This function returns the basestation properties.
+        """
+        resource = "basestation"
+        basestation_id = basestation.get("deviceId")
+
+        def trigger(self):
+            self.request.post(
+                f"https://{self.BASE_URL}/hmsweb/users/devices/notify/{basestation_id}",
+                params={
+                    "to": basestation_id,
+                    "from": self.user_id + "_web",
+                    "resource": resource,
+                    "action": "get",
+                    "publishResponse": False,
+                    "transId": self.genTransId(),
+                },
+                headers={"xcloudId":basestation.get("xCloudId")}
+            )
+
+        def callback(self, event):
+            if "error" in event:
+                return None
+            properties = event.get("properties", {})
+            return properties
+
+        return await self.TriggerAndHandleEvent(
+            basestation,
+            resource,
+            [('is')],
+            trigger,
+            callback,
+        )
+
+    async def TriggerCameraExtendedProperties(self, basestation, camera):
+        """
+        This function returns the camera extended properties.
+        """
+        camera_id = camera.get("deviceId")
+        resource = f"cameras/{camera_id}"
+        basestation_id = basestation.get("deviceId")
+
+        def trigger(self):
+            self.request.post(
+                f"https://{self.BASE_URL}/hmsweb/users/devices/notify/{basestation_id}",
+                params={
+                    "to": basestation_id,
+                    "from": self.user_id + "_web",
+                    "resource": resource,
+                    "action": "get",
+                    "publishResponse": False,
+                    "transId": self.genTransId(),
+                },
+                headers={"xcloudId":basestation.get("xCloudId")}
+            )
+
+        def callback(self, event):
+            if "error" in event:
+                return None
+            properties = event.get("properties", {})
+            return properties
+
+        return await self.TriggerAndHandleEvent(
+            basestation,
+            resource,
+            [('is')],
+            trigger,
+            callback,
+        )
 
     def GetLocations(self) -> list:
         locations = self._getLocations()
