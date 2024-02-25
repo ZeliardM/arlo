@@ -334,7 +334,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             ScryptedInterface.Brightness.value,
         ])
 
-        if not any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITHOUT_STATUS_INDICATOR]) and self.enable_homekit_status_indicator:
+        if not any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITHOUT_STATUS_INDICATOR]):
             results.add(ScryptedInterface.OnOff.value)
 
         if self.has_sip_webrtc_streaming and not self.disable_sip_webrtc_streaming:
