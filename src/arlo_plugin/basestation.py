@@ -16,12 +16,7 @@ if TYPE_CHECKING:
     # https://adamj.eu/tech/2021/05/13/python-type-hints-how-to-fix-circular-imports/
     from .provider import ArloProvider
 
-
-class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
-    MODELS_WITH_SIRENS = [
-        "vmb4000",
-        "vmb4500"
-    ]
+class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings): 
 
     vss: ArloSirenVirtualSecuritySystem = None
 
@@ -29,6 +24,8 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
 
     async def delayed_init(self) -> None:
+        self.basestation_properties = await self.provider.arlo.TriggerBasestationProperties(self.arlo_basestation)
+
         self.logger.debug("Checking if Certificates are created with Arlo")
         cert_registered = self.peer_cert
         if cert_registered:
@@ -77,11 +74,11 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     @property
     def has_siren(self) -> bool:
-        return any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloBasestation.MODELS_WITH_SIRENS])
+        return self.has_capability("Siren", "ResourceTypes")
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.arlo_capabilities.get("Capabilities", {}).get("sipLiveStream", False) and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
+        return self.get_capability("supported", "sipLiveStreaming") and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
 
     @property
     def ip_addr(self) -> str:
@@ -129,10 +126,6 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     @property
     def ica_cert(self) -> str:
         return self.storage.getItem("ica_cert")
-    
-    @property
-    def smart_features(self) -> dict:
-        return self.provider.arlo.GetSmartFeatures(self.arlo_device)
 
     def get_applicable_interfaces(self) -> List[str]:
         return [
@@ -152,10 +145,11 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         return [
             {
                 "info": {
-                    "model": f"{self.arlo_device['modelId']} {self.arlo_device['properties'].get('hwVersion', '')}".strip(),
+                    "model": f"{self.arlo_device['modelId']}",
                     "manufacturer": "Arlo",
-                    "firmware": self.arlo_device.get("firmwareVersion"),
+                    "firmware": self.arlo_device["firmwareVersion"],
                     "serialNumber": self.arlo_device["deviceId"],
+                    "version": self.arlo_properties["hwVersion"],
                 },
                 "nativeId": vss.nativeId,
                 "name": f'{self.arlo_device["deviceName"]} Siren Virtual Security System',
@@ -236,7 +230,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         if key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
             self.logger.info(f"Smart Features: {json.dumps(self.smart_features)}")
-            self.logger.info(f"Basestation State: {await self.provider.arlo.TriggerBasestationProperties(self.arlo_basestation)}")
+            self.logger.info(f"Basestation Properties: {await self.provider.arlo.TriggerBasestationProperties(self.arlo_basestation)}")
             self.logger.debug(f'Peer Certificate:\n{self.peer_cert}')
             self.logger.debug(f'Device Certificate:\n{self.device_cert}')
             self.logger.debug(f'ICA Certificate:\n{self.ica_cert}')

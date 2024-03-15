@@ -1,4 +1,3 @@
-import os
 import asyncio
 from bs4 import BeautifulSoup
 import email
@@ -222,14 +221,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             securitymode = False
             self.storage.setItem("mode_enabled", securitymode)
         return securitymode
-    
-    @property
-    def child_devices(self) -> bool:
-        childdevices = self.storage.getItem("child_devices")
-        if childdevices is None:
-            childdevices = True
-            self.storage.setItem("child_devices", childdevices)
-        return childdevices
 
     @property
     def one_location(self) -> bool:
@@ -641,14 +632,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             },
             {
                 "group": "General",
-                "key": "child_devices",
-                "title": "Allow Scrypted to Create Child Devices for Arlo Devices",
-                "description": "Enable or Disable allowing Scrypted to create child devices for Arlo Devices.",
-                "value": self.child_devices,
-                "type": "boolean",
-            },
-            {
-                "group": "General",
                 "key": "stop_plugin",
                 "title": "Stop Arlo Plugin",
                 "description": "Stops the Arlo Plugin so you can use your main account through the Arlo Web Portal or the Arlo App.",
@@ -704,10 +687,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                     await self.do_arlo_setup()
                 skip_arlo_client = True
             elif key == "mode_enabled":
-                if self._arlo is not None and self._arlo.logged_in:
-                    self._arlo.Unsubscribe()
-                    await self.do_arlo_setup()
-            elif key == "child_devices":
                 if self._arlo is not None and self._arlo.logged_in:
                     self._arlo.Unsubscribe()
                     await self.do_arlo_setup()
@@ -805,7 +784,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
             device = await self.getDevice_impl(nativeId)
             scrypted_interfaces = device.get_applicable_interfaces()
-            manifest = device.get_device_manifest()
+            manifest = await device.get_device_manifest()
             self.logger.debug(f"Interfaces for {nativeId} ({basestation['modelId']}): {scrypted_interfaces}")
 
             # for basestations, we want to add them to the top level DeviceProvider
@@ -816,11 +795,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             await scrypted_sdk.deviceManager.onDeviceDiscovered(manifest)
 
             # add any builtin child devices and trickle discover them
-            if self.child_devices:
-                child_manifests = device.get_builtin_child_device_manifests()
-                for child_manifest in child_manifests:
-                    await scrypted_sdk.deviceManager.onDeviceDiscovered(child_manifest)
-                    provider_to_device_map.setdefault(child_manifest["providerNativeId"], []).append(child_manifest)
+            child_manifests = device.get_builtin_child_device_manifests()
+            for child_manifest in child_manifests:
+                await scrypted_sdk.deviceManager.onDeviceDiscovered(child_manifest)
+                provider_to_device_map.setdefault(child_manifest["providerNativeId"], []).append(child_manifest)
 
             basestation_devices.append(manifest)
 
@@ -860,7 +838,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
             device = await self.getDevice_impl(nativeId)
             scrypted_interfaces = device.get_applicable_interfaces()
-            manifest = device.get_device_manifest()
+            manifest = await device.get_device_manifest()
             self.logger.debug(f"Interfaces for {nativeId} ({camera['modelId']} parent {camera['parentId']}): {scrypted_interfaces}")
 
             # for cameras without basestations or cameras who have a hidden basestation,
@@ -875,11 +853,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             await scrypted_sdk.deviceManager.onDeviceDiscovered(manifest)
 
             # add any builtin child devices and trickle discover them
-            if self.child_devices:
-                child_manifests = device.get_builtin_child_device_manifests()
-                for child_manifest in child_manifests:
-                    await scrypted_sdk.deviceManager.onDeviceDiscovered(child_manifest)
-                    provider_to_device_map.setdefault(child_manifest["providerNativeId"], []).append(child_manifest)
+            child_manifests = device.get_builtin_child_device_manifests()
+            for child_manifest in child_manifests:
+                await scrypted_sdk.deviceManager.onDeviceDiscovered(child_manifest)
+                provider_to_device_map.setdefault(child_manifest["providerNativeId"], []).append(child_manifest)
 
             camera_devices.append(manifest)
 

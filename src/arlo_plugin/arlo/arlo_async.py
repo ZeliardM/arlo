@@ -32,7 +32,6 @@ from .logging import logger
 # Import all of the other stuff.
 from datetime import datetime, timedelta
 from cachetools import cached, TTLCache
-import scrypted_arlo_go
 
 import asyncio
 import sys
@@ -40,7 +39,6 @@ import base64
 import math
 import random
 import time
-import uuid
 from urllib.parse import urlparse, parse_qs
 
 stream_class = MQTTStream
@@ -112,7 +110,7 @@ class Arlo(object):
 
     def to_timestamp(self, dt):
         if sys.version[0] == '2':
-            epoch = datetime.utcfromtimestamp(0)
+            epoch = datetime.fromtimestamp(0)
             return int((dt - epoch).total_seconds() * 1e3)
         else:
             return int(dt.timestamp() * 1e3)
@@ -633,7 +631,7 @@ class Arlo(object):
         def callbackwrapper(self, event):
             properties = event.get('properties', {})
             stop = None
-            if 'privacyActive' in properties:
+            if 'chargeNotificationLedEnable' in properties:
                 stop = callback(properties['chargeNotificationLedEnable'])
             if not stop:
                 return None
@@ -1190,12 +1188,9 @@ class Arlo(object):
             },
         })
 
-    async def TriggerBasestationProperties(self, basestation):
-        """
-        This function returns the basestation properties.
-        """
-        resource = "basestation"
+    async def TriggerProperties(self, basestation, camera=None):
         basestation_id = basestation.get("deviceId")
+        resource = f"cameras/{camera.get('deviceId')}" if camera else "basestation"
 
         def trigger(self):
             self.request.post(
@@ -1220,43 +1215,11 @@ class Arlo(object):
         return await self.TriggerAndHandleEvent(
             basestation,
             resource,
-            [('is')],
-            trigger,
-            callback,
-        )
-
-    async def TriggerCameraExtendedProperties(self, basestation, camera):
-        """
-        This function returns the camera extended properties.
-        """
-        camera_id = camera.get("deviceId")
-        resource = f"cameras/{camera_id}"
-        basestation_id = basestation.get("deviceId")
-
-        def trigger(self):
-            self.request.post(
-                f"https://{self.BASE_URL}/hmsweb/users/devices/notify/{basestation_id}",
-                params={
-                    "to": basestation_id,
-                    "from": self.user_id + "_web",
-                    "resource": resource,
-                    "action": "get",
-                    "publishResponse": False,
-                    "transId": self.genTransId(),
-                },
-                headers={"xcloudId":basestation.get("xCloudId")}
-            )
-
-        def callback(self, event):
-            if "error" in event:
-                return None
-            properties = event.get("properties", {})
-            return properties
-
-        return await self.TriggerAndHandleEvent(
-            basestation,
-            resource,
-            [('is')],
+            [
+                (action, property)
+                for action in ["is"]
+                for property in ["interfaceVersion"]
+            ],
             trigger,
             callback,
         )

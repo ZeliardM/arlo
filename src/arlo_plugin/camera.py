@@ -396,7 +396,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 },
             ] + vss.get_builtin_child_device_manifests())
         return results
- 
+
     @property
     def wired_to_power(self) -> bool:
         if self.storage:
@@ -435,27 +435,27 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @property
     def has_cloud_recording(self) -> bool:
-        return self.provider.arlo.GetSmartFeatures(self.arlo_device).get("planFeatures", {}).get("eventRecording", False)
+        return self.get_feature("eventRecording")
 
     @property
     def has_spotlight(self) -> bool:
-        return any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITH_SPOTLIGHTS])
+        return self.has_capability("Spotlight")
 
     @property
     def has_floodlight(self) -> bool:
-        return any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITH_FLOODLIGHTS])
+        return self.has_capability("Floodlight")
 
     @property
     def has_nightlight(self) -> bool:
-        return any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITH_NIGHTLIGHTS])
+        return self.has_capability("NightLight")
 
     @property
     def has_siren(self) -> bool:
-        return any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITH_SIRENS])
+        return self.has_capability("Siren", "ResourceTypes")
 
     @property
     def has_audio_sensor(self) -> bool:
-        return any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITH_AUDIO_SENSORS])
+        return ("AudioDetectionTrigger" in self.arlo_capabilities.get("Capabilities", {}).get("Automation", self.arlo_capabilities.get("Capabilities", {}).get("Automation3.0", {}), {}).get("AutomationTriggers", {}))
 
     @property
     def has_battery(self) -> bool:
@@ -615,7 +615,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         elif key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
             self.logger.info(f"Smart Features: {json.dumps(self.smart_features)}")
-            self.logger.info(f"Camera State: {await self.provider.arlo.TriggerCameraExtendedProperties(self.arlo_basestation, self.arlo_device)}")
+            self.logger.info(f"Camera Properties: {await self.provider.arlo.TriggerCameraExtendedProperties(self.arlo_basestation, self.arlo_device)}")
         else:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
