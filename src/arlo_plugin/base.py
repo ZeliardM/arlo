@@ -37,7 +37,6 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
 
         try:
             self.arlo_capabilities = {} if nativeId.endswith("smss") else self.provider.arlo.GetDeviceCapabilities(self.arlo_device)
-            self.arlo_properties = self.provider.arlo.TriggerProperties(self.arlo_basestation, self.arlo_device if self.arlo_device["deviceType"] != "basestation" else None)
             self.arlo_smartFeatures = self.provider.arlo.GetSmartFeatures(self.arlo_device)
         except Exception as e:
             self.logger.warning(f"Could not load device capabilities: {e}")
