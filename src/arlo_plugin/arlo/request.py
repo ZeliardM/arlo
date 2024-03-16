@@ -14,7 +14,6 @@
 # limitations under the License.
 ##
 
-from functools import partialmethod
 import requests
 from requests.exceptions import HTTPError
 from requests_toolbelt.adapters import host_header_ssl
@@ -29,6 +28,7 @@ from .logging import logger
 #def print_raw_http(response):
 #    data = dump.dump_all(response, request_prefix=b'', response_prefix=b'')
 #    print('\n' * 2 + data.decode('utf-8'))
+
 
 class Request(object):
     """HTTP helper class"""

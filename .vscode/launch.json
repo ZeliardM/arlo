@@ -16,7 +16,7 @@
             "preLaunchTask": "scrypted: deploy+debug",
             "pathMappings": [
                 {
-                    "localRoot": "${workspaceFolder}/../../server/python/",
+                    "localRoot": "${workspaceFolder}/root/.scrypted/server/python/",
                     "remoteRoot": "${config:scrypted.serverRoot}/python",
                 },
                 {

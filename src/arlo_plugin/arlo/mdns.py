@@ -8,6 +8,7 @@ from zeroconf.asyncio import (
     AsyncZeroconf,
 )
 
+
 class AsyncListener:
     def __init__(self) -> None:
         super().__init__()
@@ -30,6 +31,7 @@ class AsyncListener:
                 'deviceId': info.properties[b'deviceid'].decode("utf-8")
             }
             self.services.update({item['deviceId']:item})
+
 
 class AsyncBrowser:
     def __init__(self) -> None:

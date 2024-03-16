@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import List, TYPE_CHECKING
 
 from scrypted_sdk.types import Device, DeviceProvider, Setting, Settings, SettingValue, SecuritySystem, SecuritySystemMode, Readme, ScryptedInterface, ScryptedDeviceType
@@ -24,8 +23,8 @@ class ArloSirenVirtualSecuritySystem(ArloDeviceBase, SecuritySystem, Settings, R
     siren: ArloSiren = None
     parent: ArloBasestation | ArloCamera = None
 
-    def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, provider: ArloProvider, parent: ArloBasestation | ArloCamera) -> None:
-        super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, provider=provider)
+    def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider, parent: ArloBasestation | ArloCamera) -> None:
+        super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
         self.parent = parent
 
     @property
@@ -68,10 +67,10 @@ class ArloSirenVirtualSecuritySystem(ArloDeviceBase, SecuritySystem, Settings, R
         return [
             {
                 "info": {
-                    "model": f"{self.arlo_device['modelId']} {self.arlo_device['properties'].get('hwVersion', '')}".strip(),
+                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
                     "manufacturer": "Arlo",
-                    "firmware": self.arlo_device.get("firmwareVersion"),
                     "serialNumber": self.arlo_device["deviceId"],
+                    "firmware": self.arlo_properties["swVersion"],
                 },
                 "nativeId": siren.nativeId,
                 "name": f'{self.arlo_device["deviceName"]} Siren',
@@ -118,7 +117,7 @@ If this virtual security system is synced to Homekit, the siren device will be m
     def get_or_create_siren(self) -> ArloSiren:
         siren_id = f'{self.arlo_device["deviceId"]}.siren'
         if not self.siren:
-            self.siren = ArloSiren(siren_id, self.arlo_device, self.arlo_basestation, self.provider, self)
+            self.siren = ArloSiren(siren_id, self.arlo_device, self.arlo_basestation, self.arlo_properties, self.provider, self)
         return self.siren
 
     @async_print_exception_guard

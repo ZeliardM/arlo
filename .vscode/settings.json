@@ -17,7 +17,7 @@
     "scrypted.volumeRoot": "/server/volume",
 
     // local checkout
-    "scrypted.debugHost": "127.0.0.1",
+    "scrypted.debugHost": "192.168.1.250",
     //"scrypted.serverRoot": "/Volumes/Dev/scrypted/server",
     //"scrypted.volumeRoot": "${config:scrypted.serverRoot}/volume",
 

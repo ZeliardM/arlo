@@ -28,6 +28,7 @@ class BackgroundTaskMixin:
         for task in self.background_tasks:
             task.cancel()
 
+
 def async_print_exception_guard(fn):
     """Decorator to print an exception's stack trace before re-raising the exception."""
     async def wrapped(*args, **kwargs):

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-
-from typing import List, TYPE_CHECKING
 import json
+from typing import List, TYPE_CHECKING
 
 from scrypted_sdk import ScryptedDeviceBase
 from scrypted_sdk.types import Device, DeviceProvider, Setting, SettingValue, Settings, ScryptedInterface, ScryptedDeviceType
@@ -16,16 +15,15 @@ if TYPE_CHECKING:
     # https://adamj.eu/tech/2021/05/13/python-type-hints-how-to-fix-circular-imports/
     from .provider import ArloProvider
 
+
 class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings): 
 
     vss: ArloSirenVirtualSecuritySystem = None
 
-    def __init__(self, nativeId: str, arlo_basestation: dict, provider: ArloProvider) -> None:
-        super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, provider=provider)
+    def __init__(self, nativeId: str, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
+        super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
 
     async def delayed_init(self) -> None:
-        self.basestation_properties = await self.provider.arlo.TriggerBasestationProperties(self.arlo_basestation)
-
         self.logger.debug("Checking if Certificates are created with Arlo")
         cert_registered = self.peer_cert
         if cert_registered:
@@ -78,7 +76,11 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.get_capability("supported", "sipLiveStreaming") and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
+        return self.has_capability("supported", "sipLiveStream") and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
+    
+    @property
+    def can_restart(self) -> bool:
+        return self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
 
     @property
     def ip_addr(self) -> str:
@@ -145,11 +147,10 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         return [
             {
                 "info": {
-                    "model": f"{self.arlo_device['modelId']}",
+                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
                     "manufacturer": "Arlo",
-                    "firmware": self.arlo_device["firmwareVersion"],
                     "serialNumber": self.arlo_device["deviceId"],
-                    "version": self.arlo_properties["hwVersion"],
+                    "firmware": self.arlo_properties["swVersion"],
                 },
                 "nativeId": vss.nativeId,
                 "name": f'{self.arlo_device["deviceName"]} Siren Virtual Security System',
@@ -170,7 +171,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     def get_or_create_vss(self) -> ArloSirenVirtualSecuritySystem:
         vss_id = f'{self.arlo_device["deviceId"]}.vss'
         if not self.vss:
-            self.vss = ArloSirenVirtualSecuritySystem(vss_id, self.arlo_device, self.arlo_basestation, self.provider, self)
+            self.vss = ArloSirenVirtualSecuritySystem(vss_id, self.arlo_device, self.arlo_basestation, self.arlo_properties, self.provider, self)
         return self.vss
 
     async def getSettings(self) -> List[Setting]:
@@ -215,22 +216,23 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                 "type": "button",
             },
         )
-        result.append(
-            {
-                "group": "General",
-                "key": "restart_device",
-                "title": "Restart Device",
-                "description": "Restarts the Device.",
-                "type": "button",
-            },
-        )
+        if self.can_restart:
+            result.append(
+                {
+                    "group": "General",
+                    "key": "restart_device",
+                    "title": "Restart Device",
+                    "description": "Restarts the Device.",
+                    "type": "button",
+                },
+            )
         return result
 
     async def putSetting(self, key: str, value: SettingValue) -> None:
         if key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
-            self.logger.info(f"Smart Features: {json.dumps(self.smart_features)}")
-            self.logger.info(f"Basestation Properties: {await self.provider.arlo.TriggerBasestationProperties(self.arlo_basestation)}")
+            self.logger.info(f"Smart Features: {json.dumps(self.arlo_smartFeatures)}")
+            self.logger.info(f"Basestation Properties: {self.arlo_properties}")
             self.logger.debug(f'Peer Certificate:\n{self.peer_cert}')
             self.logger.debug(f'Device Certificate:\n{self.device_cert}')
             self.logger.debug(f'ICA Certificate:\n{self.ica_cert}')

@@ -111,68 +111,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     }
     ARLO_TO_SCRYPTED_BRIGHTNESS_MAP = {v: k for k, v in SCRYPTED_TO_ARLO_BRIGHTNESS_MAP.items()}
 
-    MODELS_WITH_SPOTLIGHTS = [
-        "vmc2030",
-        "vmc2032",
-        "vmc2050",
-        "vmc2052",
-        "vmc3050",
-        "vmc3052",
-        "vmc4040p",
-        "vmc4041p",
-        "vmc4050p",
-        "vmc4060p",
-        "vmc5040",
-        "vml2030",
-        "vml4030",
-    ]
-
-    MODELS_WITH_FLOODLIGHTS = ["fb1001"]
-
-    MODELS_WITH_NIGHTLIGHTS = [
-        "abc1000",
-        "abc1000a",
-    ]
-
-    MODELS_WITH_SIRENS = [
-        "fb1001",
-        "vmc2020",
-        "vmc2030",
-        "vmc2032",
-        "vmc2050",
-        "vmc2052",
-        "vmc2060",
-        "vmc3050",
-        "vmc3052",
-        "vmc3060",
-        "vmc4030",
-        "vmc4030p",
-        "vmc4040p",
-        "vmc4041p",
-        "vmc4050p",
-        "vmc4060p",
-        "vmc5040",
-        "vml2030",
-        "vml4030",
-    ]
-
-    MODELS_WITH_AUDIO_SENSORS = [
-        "abc1000",
-        "abc1000a",
-        "fb1001",
-        "vmc2040",
-        "vmc3040",
-        "vmc3040s",
-        "vmc4030",
-        "vmc4030p",
-        "vmc4040p",
-        "vmc4041p",
-        "vmc4050p",
-        "vmc5040",
-        "vml2030",
-        "vml4030",
-    ]
-
     MODELS_WITHOUT_BATTERY = [
         "avd1001",
         "vmc2040",
@@ -195,13 +133,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         "vmc3060",
     ]
 
-    MODELS_WITHOUT_STATUS_INDICATOR = [
-        "avd1001",
-        "avd2001",
-        "avd3001",
-        "avd4001",
-    ]
-
     timeout: int = 30
     intercom_session: ArloCameraIntercomSession = None
     light: ArloSpotlight = None
@@ -216,13 +147,20 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     info_logger: LoggerServer
     debug_logger: LoggerServer
 
-    def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, provider: ArloProvider) -> None:
-        super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, provider=provider)
+    def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
+        super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
 
         self.picture_lock = asyncio.Lock()
 
         self.info_logger = LoggerServer(self, self.logger.info)
         self.debug_logger = LoggerServer(self, self.logger.debug)
+
+        #Initialze properties
+        self.motionDetected = self.get_property("motionDetected")
+        self.audioDetected = self.get_property("audioDetected")
+        self.brightness = ArloCamera.ARLO_TO_SCRYPTED_BRIGHTNESS_MAP[self.get_property("brightness")]
+        self.on = self.get_property("chargeNotificationLedEnable")
+        self.batteryLevel = self.get_property("batteryLevel")
 
         self.start_error_subscription()
         self.start_motion_subscription()
@@ -290,7 +228,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     def start_status_indicator_subscription(self) -> None:
         def callback(status_indicator):
-            self.on = not status_indicator
+            self.on = status_indicator
             return self.stop_subscriptions
 
         self.register_task(
@@ -334,7 +272,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             ScryptedInterface.Brightness.value,
         ])
 
-        if not any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITHOUT_STATUS_INDICATOR]):
+        if self.has_status_indicator:
             results.add(ScryptedInterface.OnOff.value)
 
         if self.has_sip_webrtc_streaming and not self.disable_sip_webrtc_streaming:
@@ -367,10 +305,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             light = self.get_or_create_light()
             results.append({
                 "info": {
-                    "model": f"{self.arlo_device['modelId']} {self.arlo_device['properties'].get('hwVersion', '')}".strip(),
+                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
                     "manufacturer": "Arlo",
-                    "firmware": self.arlo_device.get("firmwareVersion"),
                     "serialNumber": self.arlo_device["deviceId"],
+                    "firmware": self.arlo_properties["swVersion"],
                 },
                 "nativeId": light.nativeId,
                 "name": f'{self.arlo_device["deviceName"]} {"Spotlight" if self.has_spotlight else "Floodlight" if self.has_floodlight else "Nightlight"}',
@@ -383,10 +321,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             results.extend([
                 {
                     "info": {
-                        "model": f"{self.arlo_device['modelId']} {self.arlo_device['properties'].get('hwVersion', '')}".strip(),
+                        "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
                         "manufacturer": "Arlo",
-                        "firmware": self.arlo_device.get("firmwareVersion"),
                         "serialNumber": self.arlo_device["deviceId"],
+                        "firmware": self.arlo_properties["swVersion"],
                     },
                     "nativeId": vss.nativeId,
                     "name": f'{self.arlo_device["deviceName"]} Siren Virtual Security System',
@@ -399,10 +337,8 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @property
     def wired_to_power(self) -> bool:
-        if self.storage:
-            return True if self.storage.getItem("wired_to_power") else False
-        else:
-            return False
+        chargerTech = self.get_property("chargerTech")
+        return chargerTech != 'None'
 
     @property
     def eco_mode(self) -> bool:
@@ -435,7 +371,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @property
     def has_cloud_recording(self) -> bool:
-        return self.get_feature("eventRecording")
+        return self.has_feature("eventRecording")
 
     @property
     def has_spotlight(self) -> bool:
@@ -455,30 +391,34 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @property
     def has_audio_sensor(self) -> bool:
-        return ("AudioDetectionTrigger" in self.arlo_capabilities.get("Capabilities", {}).get("Automation", self.arlo_capabilities.get("Capabilities", {}).get("Automation3.0", {}), {}).get("AutomationTriggers", {}))
+        return self.has_capability("AudioDetectionTrigger", "Automation", "AutomationTriggers") or self.has_capability("AudioDetectionTrigger", "Automation3.0", "AutomationTriggers")
 
     @property
     def has_battery(self) -> bool:
         return not any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITHOUT_BATTERY])
 
     @property
+    def has_status_indicator(self) -> bool:
+        return self.has_property("chargeNotificationLedEnable")
+
+    @property
     def has_push_to_talk(self) -> bool:
-        return bool(self.arlo_capabilities.get("Capabilities", {}).get("PushToTalk", {}).get("fullDuplex"))
+        return self.has_capability("fullDuplex", "PushToTalk")
 
     @property
     def uses_sip_push_to_talk(self) -> bool:
-        return "sip" in self.arlo_capabilities.get("Capabilities", {}).get("PushToTalk", {}).get("signal", [])
+        return self.has_capability("sip", "PushToTalk", "signal")
 
     @property
     def has_sip_webrtc_streaming(self) -> bool:
         if any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITH_SIP_STREAMING]):
             return True
         else:
-            return "SIPStreaming" in self.arlo_capabilities.get("Capabilities", {}).get("Streaming", {})
+            return self.has_capability("SIPStreaming", "Streaming")
 
     @property
     def has_local_live_streaming(self) -> bool:
-        return self.smart_features.get("planFeatures", {}).get("localLiveStreaming", False) and self.arlo_device["deviceId"] != self.arlo_basestation["deviceId"] and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
+        return self.has_feature("localLiveStreaming") and self.arlo_device["deviceId"] != self.arlo_basestation["deviceId"] and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
 
     @property
     def local_live_streaming_codec(self) -> str:
@@ -497,24 +437,11 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         return video.get("Codecs", [])
 
     @property
-    def smart_features(self) -> dict:
-        return self.provider.arlo.GetSmartFeatures(self.arlo_device)
+    def can_restart(self) -> bool:
+        return self.arlo_device["deviceId"] == self.arlo_device["parentId"] and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
 
     async def getSettings(self) -> List[Setting]:
         result = []
-        if self.has_battery:
-            result.append(
-                {
-                    "group": "General",
-                    "key": "wired_to_power",
-                    "title": "Plugged In to External Power",
-                    "value": self.wired_to_power,
-                    "description": "Informs Scrypted that this device is plugged in to an external power source. " + \
-                                   "Will allow features like persistent prebuffer to work. " + \
-                                   "Note that a persistent prebuffer may cause excess battery drain if the external power is not able to charge faster than the battery consumption rate.",
-                    "type": "boolean",
-                },
-            )
         result.append(
             {
                 "group": "General",
@@ -586,7 +513,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 "type": "button",
             }
         )
-        if self.arlo_device["deviceId"] == self.arlo_device["parentId"]:
+        if self.can_restart:
             result.append(
                 {
                     "group": "General",
@@ -607,15 +534,15 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if key == "restart_device":
             self.logger.info("Restarting Device")
             self.provider.arlo.RestartDevice(self.arlo_device["deviceId"])
-        elif key in ["wired_to_power", "disable_sip_webrtc_streaming"]:
+        elif key in ["disable_sip_webrtc_streaming"]:
             self.storage.setItem(key, value == "true" or value == True)
             await self.provider.discover_devices()
         elif key in ["eco_mode", "disable_eager_streams"]:
             self.storage.setItem(key, value == "true" or value == True)
         elif key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
-            self.logger.info(f"Smart Features: {json.dumps(self.smart_features)}")
-            self.logger.info(f"Camera Properties: {await self.provider.arlo.TriggerCameraExtendedProperties(self.arlo_basestation, self.arlo_device)}")
+            self.logger.info(f"Smart Features: {json.dumps(self.arlo_smartFeatures)}")
+            self.logger.info(f"Camera Properties: {self.arlo_properties}")
         else:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
@@ -999,22 +926,22 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if self.has_spotlight:
             light_id = f'{self.arlo_device["deviceId"]}.spotlight'
             if not self.light:
-                self.light = ArloSpotlight(light_id, self.arlo_device, self.arlo_basestation, self.provider, self)
+                self.light = ArloSpotlight(light_id, self.arlo_device, self.arlo_basestation, self.arlo_properties, self.provider, self)
         elif self.has_floodlight:
             light_id = f'{self.arlo_device["deviceId"]}.floodlight'
             if not self.light:
-                self.light = ArloFloodlight(light_id, self.arlo_device, self.arlo_basestation, self.provider, self)
+                self.light = ArloFloodlight(light_id, self.arlo_device, self.arlo_basestation, self.arlo_properties, self.provider, self)
         elif self.has_nightlight:
             light_id = f'{self.arlo_device["deviceId"]}.nightlight'
             if not self.light:
-                self.light = ArloNightlight(light_id, self.arlo_device, self.provider, self)
+                self.light = ArloNightlight(light_id, self.arlo_device, self.arlo_properties, self.provider, self)
         return self.light
 
     def get_or_create_vss(self) -> ArloSirenVirtualSecuritySystem:
         if self.has_siren:
             vss_id = f'{self.arlo_device["deviceId"]}.vss'
             if not self.vss:
-                self.vss = ArloSirenVirtualSecuritySystem(vss_id, self.arlo_device, self.arlo_basestation, self.provider, self)
+                self.vss = ArloSirenVirtualSecuritySystem(vss_id, self.arlo_device, self.arlo_basestation, self.arlo_properties, self.provider, self)
         return self.vss
 
     async def getDetectionInput(self, detectionId: str, eventId=None) -> MediaObject:
@@ -1322,6 +1249,7 @@ class ArloCameraSIPIntercomSession(ArloCameraIntercomSession):
             self.arlo_sip.Close()
             self.arlo_sip = None
 
+
 class ArloCameraRTCSignalingSession(BackgroundTaskMixin):
     def __init__(self, camera: ArloCamera) -> None:
         super().__init__()
@@ -1371,6 +1299,7 @@ class ArloCameraRTCSignalingSession(BackgroundTaskMixin):
             ice_servers,
             sip_cfg,
         )
+
 
 class ArloCameraRTCSessionControl:
     def __init__(self, arlo_session: ArloCameraRTCSignalingSession) -> None:

@@ -26,6 +26,7 @@ import uuid
 
 from .logging import logger
 
+
 class Stream:
     """This class provides a queue-based EventStream object."""
     def __init__(self, arlo, expire=5):

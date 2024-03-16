@@ -6,6 +6,7 @@ import paho.mqtt.client as mqtt
 from .stream_async import Stream
 from .logging import logger
 
+
 class MQTTStream(Stream):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

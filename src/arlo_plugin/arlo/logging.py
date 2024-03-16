@@ -1,6 +1,7 @@
 import logging
 import sys
 
+
 # construct logger instance to be used by package arlo
 logger = logging.getLogger("lib")
 logger.setLevel(logging.INFO)

@@ -41,7 +41,8 @@ import random
 import time
 from urllib.parse import urlparse, parse_qs
 
-stream_class = MQTTStream
+
+stream_class = EventStream
 
 def change_stream_class(s_class):
     global stream_class
@@ -90,6 +91,7 @@ VALID_DEVICE_STATES = [
     'provisioned',
     'synced',
 ]
+
 
 class Arlo(object):
     BASE_URL = 'my.arlo.com'

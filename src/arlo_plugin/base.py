@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from typing import List, TYPE_CHECKING
 
 from scrypted_sdk import ScryptedDeviceBase
@@ -24,7 +23,7 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
     provider: ArloProvider = None
     stop_subscriptions: bool = False
 
-    def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, provider: ArloProvider) -> None:
+    def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId)
 
         self.logger_name = nativeId
@@ -32,31 +31,20 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
         self.nativeId = nativeId
         self.arlo_device = arlo_device
         self.arlo_basestation = arlo_basestation
+        self.arlo_properties = arlo_properties
         self.provider = provider
         self.logger.setLevel(self.provider.get_current_log_level())
 
         try:
             self.arlo_capabilities = {} if nativeId.endswith("smss") else self.provider.arlo.GetDeviceCapabilities(self.arlo_device)
-            self.arlo_smartFeatures = self.provider.arlo.GetSmartFeatures(self.arlo_device)
+            self.arlo_smartFeatures = {} if nativeId.endswith("smss") else self.provider.arlo.GetSmartFeatures(self.arlo_device)
         except Exception as e:
-            self.logger.warning(f"Could not load device capabilities: {e}")
+            self.logger.warning(f"Could not load device capabilities and smart features: {e}")
             self.arlo_capabilities = {}
-
-        self.properties_loaded = asyncio.Event()
-        self.create_task(self.load_device_properties())
+            self.arlo_smartFeatures = {}
         self.create_task(self._do_delayed_init())
 
-    async def load_device_properties(self) -> None:
-        try:
-            self.logger.debug(f"Loading device properties for {self.nativeId}")
-            self.arlo_properties = await self.provider.arlo.TriggerProperties(self.arlo_basestation, self.arlo_device if self.arlo_device["deviceType"] != "basestation" else None)
-            self.logger.debug(f"Loaded device properties for {self.nativeId}")
-            self.properties_loaded.set()  # Signal that properties have been loaded
-        except Exception as e:
-            self.logger.warning(f"Could not load device properties: {e}")
-
     async def _do_delayed_init(self) -> None:
-        await self.properties_loaded.wait()
         await self.provider.device_discovery_done()
         await self.delayed_init()
 
@@ -76,9 +64,8 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
         """Returns the Scrypted device type that applies to this device."""
         return ""
 
-    async def get_device_manifest(self) -> Device:
+    def get_device_manifest(self) -> Device:
         """Returns the Scrypted device manifest representing this device."""
-        await self.properties_loaded.wait()
         parent = None
         if self.arlo_device.get("parentId") and self.arlo_device["parentId"] != self.arlo_device["deviceId"]:
             parent = self.arlo_device["parentId"]
@@ -88,11 +75,10 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
 
         return {
             "info": {
-                "model": f"{self.arlo_device['modelId']}",
+                "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
                 "manufacturer": "Arlo",
-                "firmware": self.arlo_device["firmwareVersion"],
                 "serialNumber": self.arlo_device["deviceId"],
-                "version": self.arlo_properties["hwVersion"],
+                "firmware": self.arlo_properties["swVersion"],
             },
             "nativeId": self.arlo_device["deviceId"],
             "name": self.arlo_device["deviceName"],
@@ -105,25 +91,27 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
         """Returns the list of child device manifests representing hardware features built into this device."""
         return []
 
-    def get_feature(self, feature: str) -> bool:
+    def has_feature(self, feature: str) -> bool:
         smartfeatures = self.arlo_smartFeatures.get("planFeatures", {})
         return smartfeatures.get(feature, False)
     
-    def has_capability(self, capability: str, subCapability: str = None, subSubCapability: str = None) -> bool:
+    def has_capability(self, capability: str, subCapability: str = None, subSubCapability: str = None) -> any:
         capabilities = self.arlo_capabilities.get("Capabilities", {})
+
         if subCapability:
-            if subSubCapability:
-                return capability in capabilities.get(subCapability, {}).get(subSubCapability, {})
-            return capability in capabilities.get(subCapability, {})
+            capabilities = capabilities.get(subCapability, {})
+        if subSubCapability:
+            capabilities = capabilities.get(subSubCapability, {})
+
+        # Check if 'capability' exists in the dictionary
         return capability in capabilities
     
-    def get_capability(self, capability: str, subCapability: str, subSubCapability: str = None) -> any:
-        capabilities = self.arlo_capabilities.get("Capabilities", {})
-        if subSubCapability:
-            return capabilities.get(subCapability, {}).get(subSubCapability, {}).get(capability, False)
-        return capabilities.get(subCapability, {}).get(capability, False)
+    def get_property(self, property: str, subProperty: str = None) -> any:
+        if subProperty:
+            return self.arlo_properties.get(subProperty, {}).get(property, None)
+        return self.arlo_properties.get(property, None)
     
-    def get_property(self, property: str, subProperty: str, subSubProperty: str = None) -> any:
-        if subSubProperty:
-            return self.arlo_properties.get(subProperty, {}).get(subSubProperty, {}).get(property, None)
-        return self.arlo_properties.get(subProperty, {}).get(property, None)
+    def has_property(self, property: str, subProperty: str = None) -> bool:
+        if subProperty:
+            return property in self.arlo_properties.get(subProperty, {})
+        return property in self.arlo_properties
