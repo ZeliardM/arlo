@@ -337,8 +337,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @property
     def wired_to_power(self) -> bool:
-        chargerTech = self.get_property("chargerTech")
-        return chargerTech != 'None'
+        if self.storage:
+            return True if self.storage.getItem("wired_to_power") else False
+        else:
+            return False
 
     @property
     def eco_mode(self) -> bool:
@@ -442,6 +444,19 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     async def getSettings(self) -> List[Setting]:
         result = []
+        if self.has_battery:
+            result.append(
+                {
+                    "group": "General",
+                    "key": "wired_to_power",
+                    "title": "Plugged In to External Power",
+                    "value": self.wired_to_power,
+                    "description": "Informs Scrypted that this device is plugged in to an external power source. " + \
+                                   "Will allow features like persistent prebuffer to work. " + \
+                                   "Note that a persistent prebuffer may cause excess battery drain if the external power is not able to charge faster than the battery consumption rate.",
+                    "type": "boolean",
+                },
+            )
         result.append(
             {
                 "group": "General",
@@ -534,7 +549,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if key == "restart_device":
             self.logger.info("Restarting Device")
             self.provider.arlo.RestartDevice(self.arlo_device["deviceId"])
-        elif key in ["disable_sip_webrtc_streaming"]:
+        elif key in ["wired_to_power", "disable_sip_webrtc_streaming"]:
             self.storage.setItem(key, value == "true" or value == True)
             await self.provider.discover_devices()
         elif key in ["eco_mode", "disable_eager_streams"]:
