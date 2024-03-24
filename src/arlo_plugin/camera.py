@@ -110,6 +110,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         100: 2
     }
     ARLO_TO_SCRYPTED_BRIGHTNESS_MAP = {v: k for k, v in SCRYPTED_TO_ARLO_BRIGHTNESS_MAP.items()}
+    ARLO_TO_SCRYPTED_BRIGHTNESS_MAP[None] = 50
 
     MODELS_WITHOUT_BATTERY = [
         "avd1001",
