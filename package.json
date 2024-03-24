@@ -25,6 +25,9 @@
    "scrypted": {
       "name": "Arlo Camera Plugin",
       "runtime": "python",
+      "pythonVersion": {
+         "default": "3.10"
+      },
       "type": "DeviceProvider",
       "interfaces": [
          "Settings",
