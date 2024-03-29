@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings): 
 
     vss: ArloSirenVirtualSecuritySystem = None
+    reboot_event: dict = None
 
     def __init__(self, nativeId: str, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
@@ -37,6 +38,9 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
         if self.has_local_live_streaming:
             await self.mdns()
+
+        self.start_reboot_subscription()
+        self.start_state_subscription()
 
     def createCertificates(self) -> None:
         certificates = self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines()))
@@ -69,6 +73,24 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         self.storage.setItem("device_cert", deviceCert)
         self.storage.setItem("ica_cert", icaCert)
         self.logger.info("Certificates have been stored with Scrypted")
+
+    def start_reboot_subscription(self) -> None:
+        def callback(reboot):
+            self.reboot_event = reboot
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToRebootEvents(self.arlo_device, callback)
+        )
+
+    def start_state_subscription(self) -> None:
+        def callback(state):
+            self.arlo_properties['state'] = state['state']
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToDeviceStateEvents(self.arlo_device, callback)
+        )
 
     @property
     def has_siren(self) -> bool:

@@ -138,6 +138,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     intercom_session: ArloCameraIntercomSession = None
     light: ArloSpotlight = None
     vss: ArloSirenVirtualSecuritySystem = None
+    reboot_event: dict = None
 
     # eco mode bookkeeping
     picture_lock: asyncio.Lock = None
@@ -170,6 +171,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_brightness_subscription()
         self.start_status_indicator_subscription()
         self.start_smart_motion_subscription()
+        self.start_reboot_subscription()
+        self.start_activity_state_subscription()
+        self.start_stream_end_snapshot_subscription()
+        self.start_sip_call_active_subscription()
 
     async def delayed_init(self) -> None:
         if not self.has_battery:
@@ -188,6 +193,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     def start_motion_subscription(self) -> None:
         def callback(motionDetected):
             self.motionDetected = motionDetected
+            self.arlo_properties['motionDetected'] = motionDetected
             return self.stop_subscriptions
 
         self.register_task(
@@ -200,6 +206,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
         def callback(audioDetected):
             self.audioDetected = audioDetected
+            self.arlo_properties['audioDetected'] = audioDetected
             return self.stop_subscriptions
 
         self.register_task(
@@ -212,6 +219,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
         def callback(batteryLevel):
             self.batteryLevel = batteryLevel
+            self.arlo_properties['batteryLevel'] = batteryLevel
             return self.stop_subscriptions
 
         self.register_task(
@@ -221,6 +229,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     def start_brightness_subscription(self) -> None:
         def callback(brightness):
             self.brightness = ArloCamera.ARLO_TO_SCRYPTED_BRIGHTNESS_MAP[brightness]
+            self.arlo_properties['brightness'] = brightness
             return self.stop_subscriptions
 
         self.register_task(
@@ -230,6 +239,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     def start_status_indicator_subscription(self) -> None:
         def callback(status_indicator):
             self.on = status_indicator
+            self.arlo_properties['chargeNotificationLedEnable'] = status_indicator
             return self.stop_subscriptions
 
         self.register_task(
@@ -261,6 +271,48 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
         self.register_task(
             self.provider.arlo.SubscribeToSmartMotionEvents(self.arlo_basestation, self.arlo_device, callback)
+        )
+
+    def start_reboot_subscription(self) -> None:
+        def callback(reboot):
+            self.reboot_event = reboot
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToRebootEvents(self.arlo_device, callback)
+        )
+
+    def start_activity_state_subscription(self) -> None:
+        def callback(activity_state):
+            self.arlo_properties['activityState'] = activity_state['activityState']
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToDeviceStateEvents(self.arlo_basestation, callback, self.arlo_device)
+        )
+
+    def start_stream_end_snapshot_subscription(self) -> None:
+        async def callback(stream_end_snapshot_url):
+            self.logger.info("Updating cached image")
+            async with async_timeout(self.timeout):
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(stream_end_snapshot_url) as resp:
+                        stream_end_snapshot = await scrypted_sdk.mediaManager.createMediaObject(await resp.read(), "image/jpeg")
+                        self.last_picture = stream_end_snapshot
+                        self.last_picture_time = datetime.now()
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToStreamEndSnapshotEvents(self.arlo_device, callback)
+        )
+
+    def start_sip_call_active_subscription(self) -> None:
+        async def callback(sip_call_active):
+            self.arlo_properties['sipCallActive'] = sip_call_active['sipCallActive']
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToSipCallActiveEvents(self.arlo_basestation, self.arlo_device, callback)
         )
 
     def get_applicable_interfaces(self) -> List[str]:
@@ -348,7 +400,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if self.storage:
             return True if self.storage.getItem("eco_mode") else False
         else:
-            return False
+            return True
 
     @property
     def disable_eager_streams(self) -> bool:
@@ -368,7 +420,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     def snapshot_throttle_interval(self) -> int:
         interval = self.storage.getItem("snapshot_throttle_interval")
         if interval is None:
-            interval = 60
+            interval = 5
             self.storage.setItem("snapshot_throttle_interval", interval)
         return int(interval)
 
@@ -579,43 +631,63 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     async def takePicture(self, options: dict = None) -> MediaObject:
         self.logger.info("Taking picture")
 
-        real_device = await scrypted_sdk.systemManager.api.getDeviceById(self.getScryptedProperty("id"))
-        msos = await real_device.getVideoStreamOptions()
-        if any(["prebuffer" in m for m in msos]):
-            self.logger.info("Getting snapshot from prebuffer")
-            try:
-                vs = await real_device.getVideoStream({"refresh": False})
-            except Exception as e:
-                self.logger.warning(f"Could not fetch from prebuffer due to: {e}")
-                self.logger.warning("Will try to fetch snapshot from Arlo cloud")
-            else:
-                self.last_picture_time = datetime(1970, 1, 1)
-                return vs
-
         async with self.picture_lock:
+            # Check if the eco mode is on and if the time is greater than 0
             if self.eco_mode and self.snapshot_throttle_interval > 0:
+                # If the time is within the eco mode time, use the last snapshot
                 if datetime.now() - self.last_picture_time <= timedelta(minutes=self.snapshot_throttle_interval):
                     self.logger.info("Using cached image")
-                    return await scrypted_sdk.mediaManager.createMediaObject(self.last_picture, "image/jpeg")
+                    return self.last_picture
 
-            pic_url = await asyncio.wait_for(self.provider.arlo.TriggerFullFrameSnapshot(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+            # Check if the camera is userStreamActive
+            if self.arlo_properties['activityState'] == 'userStreamActive':
+                # If the camera is userStreamActive, try and pull a snapshot from the prebuffered stream
+                scrypted_device = await scrypted_sdk.systemManager.api.getDeviceById(self.getScryptedProperty("id"))
+                msos = await scrypted_device.getVideoStreamOptions()
+                if any(["prebuffer" in m for m in msos]):
+                    self.logger.info("Getting snapshot from prebuffer")
+                    try:
+                        # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
+                        self.last_picture = await scrypted_device.getVideoStream({"refresh": False})
+                        self.last_picture_time = datetime.now()
+                        return self.last_picture
+                    except Exception as e:
+                        # If there is an error, log the error and try to get a snapshot from the Arlo cloud
+                        self.logger.warning(f"Could not fetch from prebuffer due to: {e}")
+                        self.logger.warning("Will try to fetch snapshot from Arlo cloud.")
+
+            # Try and get a snapshot url
+            try:
+                pic_url = await asyncio.wait_for(self.provider.arlo.TriggerFullFrameSnapshot(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+            except Exception:
+                # If the pic_url is None, set the activityState to idle, log the error, and return a snapshot with failed on it
+                self.arlo_properties['activityState'] = "idle"
+                raise Exception(f"Error taking snapshot: no url returned")
+
+            # If the pic_url is not None, get the picture from the url
             self.logger.debug(f"Got snapshot URL at {pic_url}")
-
-            if pic_url is None:
-                raise Exception("Error taking snapshot: no url returned")
-
             async with async_timeout(self.timeout):
                 async with aiohttp.ClientSession() as session:
                     async with session.get(pic_url) as resp:
                         if resp.status != 200:
+                            # If the get is not status 200 set the activityState to idle, raise the error with the status, and return the snapshot with failed on it
+                            self.arlo_properties['activityState'] = "idle"
                             raise Exception(f"Unexpected status downloading snapshot image: {resp.status}")
-                        self.last_picture = await resp.read()
-                        self.last_picture_time = datetime.now()
-
-            return await scrypted_sdk.mediaManager.createMediaObject(self.last_picture, "image/jpeg")
+                        else:
+                            # If the status is 200, set the response as the cached snapshot and set the time as now and return the snapshot
+                            self.arlo_properties['activityState'] = "idle"
+                            self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(await resp.read(), "image/jpeg")
+                            self.last_picture_time = datetime.now()
+                            return self.last_picture
 
     @async_print_exception_guard
     async def startRTCSignalingSession(self, scrypted_session):
+        if self.arlo_properties.get('sipCallActive', False) is not False and self.arlo_properties['sipCallActive'] != False:
+            self.logger.info("Camera is busy, not starting stream")
+            return None
+        
+        self.logger.debug("Entered startRTCSignalingSession")
+        
         plugin_session = ArloCameraRTCSignalingSession(self)
 
         ice_servers = [
@@ -817,6 +889,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @async_print_exception_guard
     async def getVideoStream(self, options: RequestMediaStreamOptions = {}) -> MediaObject:
+        if self.arlo_properties['activityState'] != "idle":
+            self.logger.info("Camera is busy, not starting stream")
+            return None
+        
         self.logger.debug("Entered getVideoStream")
 
         mso = await self.getVideoStreamOptions(id=options.get("id", "default"))

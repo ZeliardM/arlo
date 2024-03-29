@@ -616,9 +616,9 @@ class Arlo(object):
     
     def SubscribeToStatusIndicatorEvents(self, basestation, camera, callback):
         """
-        Use this method to subscribe to camera privacy events. You must provide a callback function which will get called once per privacy event.
+        Use this method to subscribe to camera charge status led notification events. You must provide a callback function which will get called once per charge status led notification event.
 
-        Technically speaking, Arlo doesn't produce privacy events. This is used as a callback for when privacy is modified by the user.
+        Technically speaking, Arlo doesn't produce charge status led notification events. This is used as a callback for when charge status led notification is modified by the user.
 
         The callback function should have the following signature:
         def callback(event)
@@ -641,6 +641,119 @@ class Arlo(object):
 
         return asyncio.get_event_loop().create_task(
             self.HandleEvents(basestation, resource, [('is', 'chargeNotificationLedEnable')], callbackwrapper)
+        )
+    
+    def SubscribeToRebootEvents(self, device, callback):
+        """
+        Use this method to subscribe to device reboot events. You must provide a callback function which will get called once per device reboot event.
+
+        Technically speaking, Arlo doesn't produce device reboot events. This is used as a callback for when device reboot is initiated by the user.
+
+        The callback function should have the following signature:
+        def callback(event)
+
+        This is an example of handling a specific event, in reality, you'd probably want to write a callback for HandleEvents()
+        that has a big switch statement in it to handle all the various events Arlo produces.
+
+        Returns the Task object that contains the subscription loop.
+        """
+        resource = 'diagnostics'
+
+        def callbackwrapper(self, event):
+            properties = event.get('from', {})
+            stop = None
+            if device['deviceId'] in properties:
+                stop = callback(event)
+            if not stop:
+                return None
+            return stop
+
+        return asyncio.get_event_loop().create_task(
+            self.HandleEvents(device, resource, [('reboot')], callbackwrapper)
+        )
+    
+    def SubscribeToDeviceStateEvents(self, basestation, callback, camera=None):
+        """
+        Use this method to subscribe to basestation or camera activity state events. 
+        You must provide a callback function which will get called once per event.
+
+        The callback function should have the following signature:
+        def callback(event)
+
+        Returns the Task object that contains the subscription loop.
+        """
+        if camera is None:
+            resource = 'basestation'
+            event_key = 'state'
+        else:
+            resource = f"cameras/{camera['deviceId']}"
+            event_key = 'activityState'
+
+        def callbackwrapper(self, event):
+            properties = event.get('properties', {})
+            stop = None
+            if event_key in properties:
+                stop = callback(event.get('properties', {}))
+            if not stop:
+                return None
+            return stop
+
+        return asyncio.get_event_loop().create_task(
+            self.HandleEvents(basestation, resource, [('is', event_key)], callbackwrapper)
+        )
+    
+    def SubscribeToSipCallActiveEvents(self, basestation, camera, callback):
+        """
+        Use this method to subscribe to sip call active events. 
+        You must provide a callback function which will get called once per event.
+
+        The callback function should have the following signature:
+        def callback(event)
+
+        Returns the Task object that contains the subscription loop.
+        """
+        if camera['deviceType'] == 'doorbell':
+            resource = f"doorbells/{camera.get('deviceId')}"
+        elif camera['deviceType'] == 'camera':
+            resource = f"cameras/{camera.get('deviceId')}"
+
+        def callbackwrapper(self, event):
+            properties = event.get('properties', {})
+            stop = None
+            if 'sipCallActive' in properties:
+                stop = callback(event.get('properties', {}))
+            if not stop:
+                return None
+            return stop
+
+        return asyncio.get_event_loop().create_task(
+            self.HandleEvents(basestation, resource, [('is', 'sipCallActive')], callbackwrapper)
+        )
+    
+    def SubscribeToStreamEndSnapshotEvents(self, camera, callback):
+        """
+        Use this method to subscribe to camera end of stream snapshot events. 
+        You must provide a callback function which will get called once per event.
+
+        The callback function should have the following signature:
+        def callback(event)
+
+        Returns the Task object that contains the subscription loop.
+        """
+        resource = "mediaUploadNotification"
+        device_id = camera.get('deviceId')
+
+        def callbackwrapper(self, event):
+            event_details = event
+            stop = None
+            if device_id in event_details.items():
+                stop = callback(event.get('presignedLastImageUrl', {}))
+            if not stop:
+                return None
+            return stop
+
+        return asyncio.get_event_loop().create_task(
+            self.HandleEvents(camera, resource, [('mediaUploadNotification', 'presignedLastImageUrl')], callbackwrapper)
         )
 
     def SubscribeToDoorbellEvents(self, basestation, doorbell, callback):
