@@ -733,8 +733,9 @@ class Arlo(object):
         Use this method to subscribe to camera end of stream snapshot events. 
         You must provide a callback function which will get called once per event.
 
+        The callback function for these events should be async to wait for the snapshot to be generated.
         The callback function should have the following signature:
-        def callback(event)
+        async def callback(event)
 
         Returns the Task object that contains the subscription loop.
         """
@@ -902,13 +903,14 @@ class Arlo(object):
                     return None
 
                 seen_events[event.uuid] = event
+
+                # always requeue so other listeners can see the event too
+                self.event_stream.requeue(event, resource, action, property)
+
                 if asyncio.iscoroutinefunction(callback):
                     response = await callback(self, event.item)
                 else:
                     response = callback(self, event.item)
-
-                # always requeue so other listeners can see the event too
-                self.event_stream.requeue(event, resource, action, property)
 
                 if response is not None:
                     return response
