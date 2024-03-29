@@ -66,7 +66,11 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         self.propagate_verbosity()
         self.propagate_transport()
 
-        def load(self):
+        def load(self: ArloProvider):
+            if self.stop_plugin:
+                self.logger.info("Plugin has been stopped. Will not initialize Arlo client.")
+                self.logger.info("To re-enable the plugin, uncheck the 'Stop Arlo Plugin' setting.")
+                return
             if self.mfa_strategy == "IMAP":
                 self.initialize_imap()
             else:
@@ -233,11 +237,15 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
     @property
     def stop_plugin(self) -> bool:
-        stop_plugin = self.storage.getItem("stop_plugin")
-        if stop_plugin is None:
-            stop_plugin = False
-            self.storage.setItem("stop_plugin", stop_plugin)
-        return stop_plugin
+        try:
+            stop_plugin = self.storage.getItem("stop_plugin")
+            if stop_plugin is None:
+                stop_plugin = False
+                self.storage.setItem("stop_plugin", stop_plugin)
+            return stop_plugin
+        except Exception as e:
+            self.logger.warn("Could not get stop_plugin setting: {e}")
+            return False
 
     @property
     def arlo(self) -> Arlo:
@@ -693,6 +701,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                     self._arlo.Unsubscribe()
                     await self.do_arlo_setup()
             elif key == "stop_plugin":
+                """
                 if value == True:
                     if self._arlo is not None and self._arlo.logged_in:
                         self.invalidate_arlo_client()
@@ -700,7 +709,11 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 elif value == False:
                     if self.mfa_strategy == "IMAP":
                         self.initialize_imap()
+                """
                 skip_arlo_client = True
+                verb = "stopped" if value else "enabled"
+                self.logger.info(f"Arlo plugin will be {verb}. Restarting...")
+                await scrypted_sdk.deviceManager.requestRestart()
             else:
                 # force arlo client to be invalidated and reloaded
                 self.invalidate_arlo_client()
@@ -978,6 +991,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         self._device_discovery_promise.set_result(None)
 
     async def getDevice(self, nativeId: str) -> ArloDeviceBase:
+        if self.stop_plugin:
+            return None
+
         self.logger.debug(f"Scrypted requested to load device {nativeId}")
         async with self.device_discovery_lock:
             return await self.getDevice_impl(nativeId)
@@ -1015,7 +1031,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             return ArloDoorbell(nativeId, arlo_device, arlo_basestation, arlo_properties, self)
         else:
             return ArloCamera(nativeId, arlo_device, arlo_basestation, arlo_properties, self)
-        
+
     async def getDeviceProperties(self, basestation: dict, camera: dict = None) -> dict:
         arlo_properties = await self.arlo.TriggerProperties(basestation, camera) if camera else await self.arlo.TriggerProperties(basestation)
         return arlo_properties
