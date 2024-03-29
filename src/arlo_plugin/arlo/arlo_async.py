@@ -614,11 +614,9 @@ class Arlo(object):
             self.HandleEvents(basestation, resource, [('is', 'brightness')], callbackwrapper)
         )
     
-    def SubscribeToStatusIndicatorEvents(self, basestation, camera, callback):
+    def SubscribeToChargeNotificationLedEvents(self, basestation, camera, callback):
         """
-        Use this method to subscribe to camera charge status led notification events. You must provide a callback function which will get called once per charge status led notification event.
-
-        Technically speaking, Arlo doesn't produce charge status led notification events. This is used as a callback for when charge status led notification is modified by the user.
+        Use this method to subscribe to camera charge notification led events. You must provide a callback function which will get called once per charge notification led event.
 
         The callback function should have the following signature:
         def callback(event)
@@ -1281,18 +1279,7 @@ class Arlo(object):
             }
         })
 
-    def StatusIndicatorOff(self, basestation, camera):
-        resource = f"cameras/{camera.get('deviceId')}"
-        return self.Notify(basestation, {
-            "action": "set",
-            "resource": resource,
-            "publishResponse": True,
-            "properties": {
-                "chargeNotificationLedEnable": True,
-            },
-        })
-
-    def StatusIndicatorOn(self, basestation, camera):
+    def ChargeNotificationLedOff(self, basestation, camera):
         resource = f"cameras/{camera.get('deviceId')}"
         return self.Notify(basestation, {
             "action": "set",
@@ -1300,6 +1287,17 @@ class Arlo(object):
             "publishResponse": True,
             "properties": {
                 "chargeNotificationLedEnable": False,
+            },
+        })
+
+    def ChargeNotificationLedOn(self, basestation, camera):
+        resource = f"cameras/{camera.get('deviceId')}"
+        return self.Notify(basestation, {
+            "action": "set",
+            "resource": resource,
+            "publishResponse": True,
+            "properties": {
+                "chargeNotificationLedEnable": True,
             },
         })
 

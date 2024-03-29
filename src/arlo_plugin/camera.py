@@ -169,7 +169,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_audio_subscription()
         self.start_battery_subscription()
         self.start_brightness_subscription()
-        self.start_status_indicator_subscription()
+        self.start_charge_notification_led_subscription()
         self.start_smart_motion_subscription()
         self.start_reboot_subscription()
         self.start_activity_state_subscription()
@@ -236,14 +236,14 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.provider.arlo.SubscribeToBrightnessEvents(self.arlo_basestation, self.arlo_device, callback)
         )
 
-    def start_status_indicator_subscription(self) -> None:
-        def callback(status_indicator):
-            self.on = status_indicator
-            self.arlo_properties['chargeNotificationLedEnable'] = status_indicator
+    def start_charge_notification_led_subscription(self) -> None:
+        def callback(charge_notification_led):
+            self.on = charge_notification_led
+            self.arlo_properties['chargeNotificationLedEnable'] = charge_notification_led
             return self.stop_subscriptions
 
         self.register_task(
-            self.provider.arlo.SubscribeToStatusIndicatorEvents(self.arlo_basestation, self.arlo_device, callback)
+            self.provider.arlo.SubscribeToChargeNotificationLedEvents(self.arlo_basestation, self.arlo_device, callback)
         )
 
     def start_smart_motion_subscription(self) -> None:
@@ -325,7 +325,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             ScryptedInterface.Brightness.value,
         ])
 
-        if self.has_status_indicator:
+        if self.has_charge_notification_led:
             results.add(ScryptedInterface.OnOff.value)
 
         if self.has_sip_webrtc_streaming and not self.disable_sip_webrtc_streaming:
@@ -453,7 +453,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         return not any([self.arlo_device["modelId"].lower().startswith(model) for model in ArloCamera.MODELS_WITHOUT_BATTERY])
 
     @property
-    def has_status_indicator(self) -> bool:
+    def has_charge_notification_led(self) -> bool:
         return self.has_property("chargeNotificationLedEnable")
 
     @property
@@ -639,22 +639,20 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     self.logger.info("Using cached image")
                     return self.last_picture
 
-            # Check if the camera is userStreamActive
-            if self.arlo_properties['activityState'] == 'userStreamActive':
-                # If the camera is userStreamActive, try and pull a snapshot from the prebuffered stream
-                scrypted_device = await scrypted_sdk.systemManager.api.getDeviceById(self.getScryptedProperty("id"))
-                msos = await scrypted_device.getVideoStreamOptions()
-                if any(["prebuffer" in m for m in msos]):
-                    self.logger.info("Getting snapshot from prebuffer")
-                    try:
-                        # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
-                        self.last_picture = await scrypted_device.getVideoStream({"refresh": False})
-                        self.last_picture_time = datetime.now()
-                        return self.last_picture
-                    except Exception as e:
-                        # If there is an error, log the error and try to get a snapshot from the Arlo cloud
-                        self.logger.warning(f"Could not fetch from prebuffer due to: {e}")
-                        self.logger.warning("Will try to fetch snapshot from Arlo cloud.")
+            # If the camera is userStreamActive, try and pull a snapshot from the prebuffered stream
+            scrypted_device = await scrypted_sdk.systemManager.api.getDeviceById(self.getScryptedProperty("id"))
+            msos = await scrypted_device.getVideoStreamOptions()
+            if any(["prebuffer" in m for m in msos]):
+                self.logger.info("Getting snapshot from prebuffer")
+                try:
+                    # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
+                    self.last_picture = await scrypted_device.getVideoStream({"refresh": False})
+                    self.last_picture_time = datetime.now()
+                    return self.last_picture
+                except Exception as e:
+                    # If there is an error, log the error and try to get a snapshot from the Arlo cloud
+                    self.logger.warning(f"Could not fetch from prebuffer due to: {e}")
+                    self.logger.warning("Will try to fetch snapshot from Arlo cloud.")
 
             # Try and get a snapshot url
             try:
@@ -1075,14 +1073,14 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @async_print_exception_guard
     async def turnOn(self) -> None:
-        self.logger.info("Enabling Camera Status Indicator Light.")
-        self.provider.arlo.StatusIndicatorOn(self.arlo_basestation, self.arlo_device)
+        self.logger.info("Enabling Charge Notification LED Light.")
+        self.provider.arlo.ChargeNotificationLedOn(self.arlo_basestation, self.arlo_device)
         self.on = True
 
     @async_print_exception_guard
     async def turnOff(self) -> None:
-        self.logger.info("Disabling Camera Status Indicator Light.")
-        self.provider.arlo.StatusIndicatorOff(self.arlo_basestation, self.arlo_device)
+        self.logger.info("Disabling Camera Charge Notification LED Light.")
+        self.provider.arlo.ChargeNotificationLedOff(self.arlo_basestation, self.arlo_device)
         self.on = False
 
 
