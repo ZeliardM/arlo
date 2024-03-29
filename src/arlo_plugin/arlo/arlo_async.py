@@ -741,10 +741,10 @@ class Arlo(object):
         resource = "mediaUploadNotification"
         device_id = camera.get('deviceId')
 
-        def callbackwrapper(self, event):
+        async def callbackwrapper(self, event):
             stop = None
             if device_id in event.get('deviceId', {}):
-                stop = callback(event.get('presignedLastImageUrl', {}))
+                stop = await callback(event.get('presignedLastImageUrl', {}))
             if not stop:
                 return None
             return stop
@@ -902,7 +902,10 @@ class Arlo(object):
                     return None
 
                 seen_events[event.uuid] = event
-                response = callback(self, event.item)
+                if asyncio.iscoroutinefunction(callback):
+                    response = await callback(self, event.item)
+                else:
+                    response = callback(self, event.item)
 
                 # always requeue so other listeners can see the event too
                 self.event_stream.requeue(event, resource, action, property)
