@@ -742,16 +742,15 @@ class Arlo(object):
         device_id = camera.get('deviceId')
 
         def callbackwrapper(self, event):
-            event_details = event
             stop = None
-            if device_id in event_details.items():
+            if device_id in event.get('deviceId', {}):
                 stop = callback(event.get('presignedLastImageUrl', {}))
             if not stop:
                 return None
             return stop
 
         return asyncio.get_event_loop().create_task(
-            self.HandleEvents(camera, resource, [('mediaUploadNotification', 'presignedLastImageUrl')], callbackwrapper)
+            self.HandleEvents(camera, resource, [None], callbackwrapper)
         )
 
     def SubscribeToDoorbellEvents(self, basestation, doorbell, callback):

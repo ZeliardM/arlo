@@ -293,13 +293,14 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     def start_stream_end_snapshot_subscription(self) -> None:
         async def callback(stream_end_snapshot_url):
-            self.logger.info("Updating cached image")
-            async with async_timeout(self.timeout):
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(stream_end_snapshot_url) as resp:
-                        stream_end_snapshot = await scrypted_sdk.mediaManager.createMediaObject(await resp.read(), "image/jpeg")
-                        self.last_picture = stream_end_snapshot
-                        self.last_picture_time = datetime.now()
+            if stream_end_snapshot_url:
+                self.logger.info("Updating cached image")
+                async with async_timeout(self.timeout):
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(stream_end_snapshot_url) as resp:
+                            stream_end_snapshot = await scrypted_sdk.mediaManager.createMediaObject(await resp.read(), "image/jpeg")
+                            self.last_picture = stream_end_snapshot
+                            self.last_picture_time = datetime.now()
             return self.stop_subscriptions
 
         self.register_task(
