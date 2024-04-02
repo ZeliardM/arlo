@@ -837,7 +837,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             self.logger.debug(f"Creating {nativeId}")
 
             arlo_properties = await self.getDeviceProperties(basestation)
-            self.logger.debug(f"Device properties for {nativeId} ({basestation['modelId']}): {arlo_properties}")
             device = await self.getDevice_impl(nativeId, arlo_properties)
             scrypted_interfaces = device.get_applicable_interfaces()
             manifest = device.get_device_manifest()
@@ -1033,5 +1032,14 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             return ArloCamera(nativeId, arlo_device, arlo_basestation, arlo_properties, self)
 
     async def getDeviceProperties(self, basestation: dict, camera: dict = None) -> dict:
-        arlo_properties = await self.arlo.TriggerProperties(basestation, camera) if camera else await self.arlo.TriggerProperties(basestation)
+        for _ in range(3):
+            try:
+                arlo_properties = await asyncio.wait_for(self.arlo.TriggerProperties(basestation, camera), timeout=5) if camera else await asyncio.wait_for(self.arlo.TriggerProperties(basestation), timeout=5)
+                break
+            except asyncio.TimeoutError:
+                self.logger.error(f"Timeout while fetching properties for {camera['deviceId'] if camera else basestation['deviceId']}")
+                arlo_properties = {}
+        else:
+            self.logger.error(f"Failed to fetch properties for {camera['deviceId'] if camera else basestation['deviceId']} after 3 attempts")
+            arlo_properties = {}
         return arlo_properties

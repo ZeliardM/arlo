@@ -423,9 +423,13 @@ class Arlo(object):
         self.request.post(f'https://{self.BASE_URL}/hmsweb/users/devices/notify/'+body['to'], params=body, headers={"xcloudId":basestation.get('xCloudId')})
         return body.get('transId')
 
-    def Ping(self, basestation):
+    def Ping(self, basestation, camera=None):
         basestation_id = basestation.get('deviceId')
-        return self.Notify(basestation, {"action":"set","resource":"subscriptions/"+self.user_id+"_web","publishResponse":False,"properties":{"devices":[basestation_id]}})
+        if camera:
+            camera_id = camera.get('deviceId')
+            return self.Notify(basestation, {"action":"set","resource":"subscriptions/"+self.user_id+"_web","publishResponse":False,"properties":{"devices":[camera_id]}})
+        else:
+            return self.Notify(basestation, {"action":"set","resource":"subscriptions/"+self.user_id+"_web","publishResponse":False,"properties":{"devices":[basestation_id]}})
 
     def SubscribeToErrorEvents(self, basestation, camera, callback):
         """

@@ -646,11 +646,12 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             # If the camera is userStreamActive, try and pull a snapshot from the prebuffered stream
             scrypted_device = await scrypted_sdk.systemManager.api.getDeviceById(self.getScryptedProperty("id"))
             msos = await scrypted_device.getVideoStreamOptions()
-            if any(["prebuffer" in m for m in msos]):
+            prebuffer_id = next((m['id'] for m in msos if 'prebuffer' in m), None)
+            if prebuffer_id is not None:
                 self.logger.info("Getting snapshot from prebuffer")
                 try:
                     # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
-                    self.last_picture = await scrypted_device.getVideoStream({"refresh": False})
+                    self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
                     self.last_picture_time = datetime.now()
                     return self.last_picture
                 except Exception as e:
@@ -664,6 +665,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             except Exception:
                 # If the pic_url is None, set the activityState to idle, log the error, and return a snapshot with failed on it
                 self.arlo_properties['activityState'] = "idle"
+                self.provider.arlo.Ping(self.arlo_basestation, self.arlo_device)
                 raise Exception(f"Error taking snapshot: no url returned")
 
             # If the pic_url is not None, get the picture from the url
