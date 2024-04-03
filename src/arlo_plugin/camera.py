@@ -609,6 +609,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         elif key in ["wired_to_power", "disable_sip_webrtc_streaming"]:
             self.storage.setItem(key, value == "true" or value == True)
             await self.provider.discover_devices()
+            await self.provider.create_devices()
         elif key in ["eco_mode", "disable_eager_streams"]:
             self.storage.setItem(key, value == "true" or value == True)
         elif key == "print_debug":
