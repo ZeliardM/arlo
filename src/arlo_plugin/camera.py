@@ -651,7 +651,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 self.logger.info("Getting snapshot from prebuffer")
                 try:
                     # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
-                    self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
+                    self.last_picture = await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
                     self.last_picture_time = datetime.now()
                     return self.last_picture
                 except Exception as e:
@@ -689,9 +689,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if self.arlo_properties.get('sipCallActive', False) is not False and self.arlo_properties['sipCallActive'] != False:
             self.logger.info("Camera is busy, not starting stream")
             return None
-        
+
         self.logger.debug("Entered startRTCSignalingSession")
-        
+
         plugin_session = ArloCameraRTCSignalingSession(self)
 
         ice_servers = [
@@ -896,7 +896,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if self.arlo_properties['activityState'] != "idle":
             self.logger.info("Camera is busy, not starting stream")
             return None
-        
+
         self.logger.debug("Entered getVideoStream")
 
         mso = await self.getVideoStreamOptions(id=options.get("id", "default"))
