@@ -157,13 +157,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.info_logger = LoggerServer(self, self.logger.info)
         self.debug_logger = LoggerServer(self, self.logger.debug)
 
-        #Initialze properties
-        self.motionDetected = self.get_property("motionDetected")
-        self.audioDetected = self.get_property("audioDetected")
-        self.brightness = ArloCamera.ARLO_TO_SCRYPTED_BRIGHTNESS_MAP[self.get_property("brightness")]
-        self.on = self.get_property("chargeNotificationLedEnable")
-        self.batteryLevel = self.get_property("batteryLevel")
-
         self.start_error_subscription()
         self.start_motion_subscription()
         self.start_audio_subscription()
@@ -180,6 +173,11 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         if not self.has_battery:
             return
         self.chargeState = ChargeState.Charging.value if self.wired_to_power else ChargeState.NotCharging.value
+        self.motionDetected = self.get_property("motionDetected")
+        self.audioDetected = self.get_property("audioDetected")
+        self.brightness = ArloCamera.ARLO_TO_SCRYPTED_BRIGHTNESS_MAP[self.get_property("brightness")]
+        self.on = self.get_property("chargeNotificationLedEnable")
+        self.batteryLevel = self.get_property("batteryLevel")
 
     def start_error_subscription(self) -> None:
         def callback(code, message):
