@@ -67,9 +67,12 @@ class LoggerServer:
                         line = await reader.readline()
                         if not line:
                             break
-                        line = str(line, 'utf-8')
-                        line = line.rstrip()
-                        self.log_fn(line)
+                        try:
+                            line = str(line, 'utf-8')
+                            line = line.rstrip()
+                            self.log_fn(line)
+                        except Exception:
+                            self.device.logger.exception("Logger server callback raised an exception during string conversion")
                     writer.close()
                     await writer.wait_closed()
                 except Exception:
