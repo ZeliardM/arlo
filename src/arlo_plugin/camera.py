@@ -673,7 +673,8 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 self.logger.info("Getting snapshot from prebuffer")
                 try:
                     # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
-                    self.last_picture = await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
+                    buf = await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
+                    self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
                     self.last_picture_time = datetime.now()
                     return self.last_picture
                 except Exception as e:
@@ -900,6 +901,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 basestation.peer_cert,
                 self.provider.arlo_private_key,
             )
+            #proxy.MakeExtraVerbose()
             port = proxy.Start()
 
             if self.local_live_streaming_codec == "h.264":
