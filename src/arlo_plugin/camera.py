@@ -170,6 +170,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_reboot_subscription()
         self.start_activity_state_subscription()
         self.start_stream_end_snapshot_subscription()
+        self.start_local_stream_snapshot_subscription()
         self.start_sip_call_active_subscription()
 
     async def delayed_init(self) -> None:
@@ -309,6 +310,25 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
         self.register_task(
             self.provider.arlo.SubscribeToStreamEndSnapshotEvents(self.arlo_device, callback)
+        )
+
+    def start_local_stream_snapshot_subscription(self) -> None:
+        async def callback(stream_end_snapshot_url):
+            if stream_end_snapshot_url:
+                self.logger.info("Updating cached image")
+                try:
+                    async with async_timeout(self.timeout):
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(stream_end_snapshot_url) as resp:
+                                stream_end_snapshot = await scrypted_sdk.mediaManager.createMediaObject(await resp.read(), "image/jpeg")
+                                self.last_picture = stream_end_snapshot
+                                self.last_picture_time = datetime.now()
+                except Exception as e:
+                    self.logger.error(f"Error updating cached image: {e}")
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToLocalStreamSnapshotEvents(self.arlo_device, callback)
         )
 
     def start_sip_call_active_subscription(self) -> None:

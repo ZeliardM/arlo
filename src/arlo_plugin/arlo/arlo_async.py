@@ -773,6 +773,32 @@ class Arlo(object):
         return asyncio.get_event_loop().create_task(
             self.HandleEvents(camera, resource, [None], callbackwrapper)
         )
+    
+    def SubscribeToLocalStreamSnapshotEvents(self, camera, callback):
+        """
+        Use this method to subscribe to camera local stream snapshot events.
+        You must provide a callback function which will get called once per event.
+
+        The callback function for these events should be async to wait for the snapshot to be generated.
+        The callback function should have the following signature:
+        async def callback(event)
+
+        Returns the Task object that contains the subscription loop.
+        """
+        resource = f"cameras/{camera.get('deviceId')}"
+
+        async def callbackwrapper(self, event):
+            properties = event.get('properties', {})
+            stop = None
+            if 'presignedLastImageUrl' in properties:
+                stop = await callback(event['properties'].get('presignedLastImageUrl', {}))
+            if not stop:
+                return None
+            return stop
+
+        return asyncio.get_event_loop().create_task(
+            self.HandleEvents(camera, resource, [('lastImageSnapshotAvailable', 'presignedLastImageUrl')], callbackwrapper)
+        )
 
     def SubscribeToDoorbellEvents(self, basestation, doorbell, callback):
         """
