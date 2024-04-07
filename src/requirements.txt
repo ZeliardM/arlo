@@ -9,6 +9,7 @@ curl-cffi==0.6.2
 async-timeout==4.0.3
 beautifulsoup4==4.12.3
 zeroconf==0.131.0
+sseclient==0.0.22
 --extra-index-url=https://bjia56.github.io/armv7l-wheels/
 --extra-index-url=https://bjia56.github.io/scrypted-arlo-go/
 --prefer-binary
