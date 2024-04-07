@@ -42,7 +42,7 @@ import time
 from urllib.parse import urlparse, parse_qs
 
 
-stream_class = EventStream
+stream_class = PyEventStream
 
 def change_stream_class(s_class):
     global stream_class
@@ -773,7 +773,7 @@ class Arlo(object):
         return asyncio.get_event_loop().create_task(
             self.HandleEvents(camera, resource, [None], callbackwrapper)
         )
-    
+
     def SubscribeToLocalStreamSnapshotEvents(self, camera, callback):
         """
         Use this method to subscribe to camera local stream snapshot events.
