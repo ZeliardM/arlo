@@ -1,6 +1,9 @@
 import logging
 
 
+EXTRA_VERBOSE = logging.DEBUG - 1
+
+
 class ScryptedDeviceLoggingWrapper(logging.Handler):
     scrypted_device = None
 

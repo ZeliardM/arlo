@@ -23,6 +23,7 @@ from .spotlight import ArloSpotlight, ArloFloodlight, ArloNightlight
 from .vss import ArloSirenVirtualSecuritySystem
 from .child_process import HeartbeatChildProcess
 from .util import BackgroundTaskMixin, async_print_exception_guard
+from .logging import EXTRA_VERBOSE
 
 if TYPE_CHECKING:
     # https://adamj.eu/tech/2021/05/13/python-type-hints-how-to-fix-circular-imports/
@@ -151,6 +152,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     # socket logger
     info_logger: LoggerServer
     debug_logger: LoggerServer
+    extra_verbose_logger: LoggerServer
 
     def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
@@ -159,6 +161,12 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
         self.info_logger = LoggerServer(self, self.logger.info)
         self.debug_logger = LoggerServer(self, self.logger.debug)
+
+        def extra_verbose(line):
+            if self.logger.isEnabledFor(EXTRA_VERBOSE):
+                self.logger._log(EXTRA_VERBOSE, line, ())
+
+        self.extra_verbose_logger = LoggerServer(self, extra_verbose)
 
         self.start_error_subscription()
         self.start_motion_subscription()
@@ -895,7 +903,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
             proxy = scrypted_arlo_go.NewLocalStreamProxy(
                 self.info_logger.logger_server_port,
-                self.debug_logger.logger_server_port,
+                self.extra_verbose_logger.logger_server_port,
                 basestation.hostname,
                 basestation.ip_addr,
                 basestation.peer_cert,
@@ -1184,7 +1192,7 @@ class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):
 
         self.arlo_pc = scrypted_arlo_go.NewWebRTCManager(
             self.camera.info_logger.logger_server_port,
-            self.camera.debug_logger.logger_server_port,
+            self.camera.extra_verbose_logger.logger_server_port,
             ice_servers,
         )
 
@@ -1311,7 +1319,7 @@ class ArloCameraSIPIntercomSession(ArloCameraIntercomSession):
 
         self.arlo_sip = scrypted_arlo_go.NewSIPWebRTCManager(
             self.camera.info_logger.logger_server_port,
-            self.camera.debug_logger.logger_server_port,
+            self.camera.extra_verbose_logger.logger_server_port,
             ice_servers,
             sip_cfg,
         )
@@ -1415,7 +1423,7 @@ class ArloCameraRTCSignalingSession(BackgroundTaskMixin):
 
         self.arlo_sip = scrypted_arlo_go.NewSIPWebRTCManager(
             self.camera.info_logger.logger_server_port,
-            self.camera.debug_logger.logger_server_port,
+            self.camera.extra_verbose_logger.logger_server_port,
             ice_servers,
             sip_cfg,
         )

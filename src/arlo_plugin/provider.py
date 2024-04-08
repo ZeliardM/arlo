@@ -20,7 +20,7 @@ from scrypted_sdk.types import Setting, SettingValue, Settings, DeviceProvider, 
 from .arlo import Arlo, NO_MFA
 from .arlo.arlo_async import change_stream_class
 from .arlo.logging import logger as arlo_lib_logger
-from .logging import ScryptedDeviceLoggerMixin
+from .logging import ScryptedDeviceLoggerMixin, EXTRA_VERBOSE
 from .util import BackgroundTaskMixin, async_print_exception_guard
 from .base import ArloDeviceBase
 from .basestation import ArloBasestation
@@ -43,7 +43,8 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
     plugin_verbosity_choices = {
         "Normal": logging.INFO,
-        "Verbose": logging.DEBUG
+        "Verbose": logging.DEBUG,
+        "Extra Verbose": EXTRA_VERBOSE,
     }
 
     arlo_transport_choices = ["MQTT", "SSE"]
@@ -635,10 +636,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             {
                 "group": "General",
                 "key": "plugin_verbosity",
-                "title": "Verbose Logging",
-                "description": "Enable this option to show debug messages, including events received from connected Arlo cameras.",
-                "value": self.plugin_verbosity == "Verbose",
-                "type": "boolean",
+                "title": "Logging Verbosity",
+                "description": "Verbose logging will show messages received from Arlo Cloud. Extra Verbose will also show SIP and local streaming RTSP messages.",
+                "value": self.plugin_verbosity,
+                "choices": list(self.plugin_verbosity_choices.keys()),
             },
             {
                 "group": "General",
@@ -683,7 +684,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             # force arlo client to be invalidated and reloaded
             self.invalidate_arlo_client()
         elif key == "plugin_verbosity":
-            self.storage.setItem(key, "Verbose" if value == "true" or value == True else "Normal")
+            self.storage.setItem(key, value)
             self.propagate_verbosity()
             skip_arlo_client = True
         else:
