@@ -1,7 +1,9 @@
 import asyncio
 import json
-import threading
+import re
 import sseclient
+import threading
+import types
 
 import scrypted_arlo_go
 
@@ -83,6 +85,10 @@ class GoEventStream(Stream):
         pass
 
 
+class SSEClient(sseclient.SSEClient):
+    exiting: bool = False
+
+
 class PyEventStream(Stream):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -92,8 +98,12 @@ class PyEventStream(Stream):
         if self.event_stream is not None:
             return
 
+        def _patched_event_complete(self: sseclient.SSEClient):
+            return self.exiting or (re.search(sseclient.end_of_field, self.buf) is not None)
+
         def thread_main(self: PyEventStream):
             event_stream = self.event_stream
+            event_stream._event_complete = types.MethodType(_patched_event_complete, event_stream)
             try:
                 for event in event_stream:
                     logger.debug(f"Received event: {event}")
@@ -123,9 +133,10 @@ class PyEventStream(Stream):
                         self.event_loop.call_soon_threadsafe(self._queue_response, response)
             except Exception:
                 logger.exception(f"Error in SSE {id(event_stream)}")
+                event_stream.exiting = True
                 self.event_loop.call_soon_threadsafe(self.event_loop.create_task, self.restart())
 
-        self.event_stream = sseclient.SSEClient('https://myapi.arlo.com/hmsweb/client/subscribe?token='+self.arlo.request.session.headers.get('Authorization'), session=self.arlo.request.session)
+        self.event_stream = SSEClient('https://myapi.arlo.com/hmsweb/client/subscribe?token='+self.arlo.request.session.headers.get('Authorization'), session=self.arlo.request.session)
         self.event_stream_thread = threading.Thread(name="PyEventStream", target=thread_main, args=(self, ))
         self.event_stream_thread.setDaemon(True)
         self.event_stream_thread.start()
@@ -137,6 +148,7 @@ class PyEventStream(Stream):
         self.reconnecting = True
         self.connected = False
         self.shutting_down_stream = self.event_stream
+        self.shutting_down_stream.exiting = True
         self.event_stream = None
         await self.start()
         # give it an extra sleep to ensure any previous connections have disconnected properly
