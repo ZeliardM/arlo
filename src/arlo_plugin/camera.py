@@ -718,7 +718,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     @async_print_exception_guard
     async def startRTCSignalingSession(self, scrypted_session):
         if self.arlo_properties.get('sipCallActive', False) is not False and self.arlo_properties['sipCallActive'] != False:
-            self.logger.info("Camera is busy, not starting stream")
+            self.logger.info(f"Camera is busy, not starting stream: sipCallActive {self.arlo_properties.get('sipCallActive')}")
             return None
 
         self.logger.debug("Entered startRTCSignalingSession")
@@ -926,7 +926,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     @async_print_exception_guard
     async def getVideoStream(self, options: RequestMediaStreamOptions = {}) -> MediaObject:
         if self.arlo_properties['activityState'] != "idle":
-            self.logger.info("Camera is busy, not starting stream")
+            self.logger.info(f"Camera is busy, not starting stream: activityState {self.arlo_properties['activityState']}")
             return None
 
         self.logger.debug("Entered getVideoStream")
