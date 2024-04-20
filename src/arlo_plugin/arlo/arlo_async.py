@@ -708,6 +708,8 @@ class Arlo(object):
             event_key = 'activityState'
 
         def callbackwrapper(self, event):
+            if 'error' in event:
+                return None
             properties = event.get('properties', {})
             stop = None
             if event_key in properties:
