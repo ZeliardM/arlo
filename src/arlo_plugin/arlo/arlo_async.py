@@ -498,7 +498,7 @@ class Arlo(object):
         """
         return self._subscribe_to_motion_or_audio_events(basestation, camera, callback, logger, "motionDetected")
 
-    def SubscribeToAudioEvents(self, basestation, camera, callback, logger):
+    def SubscribeToAudioEvents(self, basestation, camera, callback, logger) -> asyncio.Task:
         """
         Use this method to subscribe to audio events. You must provide a callback function which will get called once per audio event.
 
@@ -1088,6 +1088,27 @@ class Arlo(object):
             [("is", "activityState")],
             trigger,
             callback,
+        )
+    
+    async def StopStream(self, camera):
+        """
+        This function stop rtsp video stream to refresh camera status.
+        """
+        
+        self.request.post(
+            f'https://{self.BASE_URL}/hmsweb/users/devices/stopStream',
+            params={
+                "to": camera.get('parentId'),
+                "from": self.user_id + "_web",
+                "resource": "cameras/" + camera.get('deviceId'),
+                "action": "set",
+                "publishResponse": True,
+                "transId": self.genTransId(),
+                "properties": {
+                    "activityState": "idle",
+                }
+            },
+            headers={"xcloudId":camera.get('xCloudId')}
         )
 
     def GetMPDHeaders(self, url: str) -> dict:

@@ -138,7 +138,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         "vmc3060",
     ]
 
-    timeout: int = 30
+    timeout: int = 10
     intercom_session: ArloCameraIntercomSession = None
     light: ArloSpotlight = None
     vss: ArloSirenVirtualSecuritySystem = None
@@ -644,7 +644,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         elif key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
             self.logger.info(f"Smart Features: {json.dumps(self.arlo_smartFeatures)}")
-            self.logger.info(f"Camera Properties: {self.arlo_properties}")
+            self.logger.info(f"Camera Properties: {await asyncio.wait_for(self.provider.arlo.TriggerProperties(self.arlo_basestation, self.arlo_device), timeout=5)}")
         else:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
@@ -666,13 +666,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.logger.info("Taking picture")
 
         async with self.picture_lock:
-            # Check if the eco mode is on and if the time is greater than 0
-            if self.eco_mode and self.snapshot_throttle_interval > 0:
-                # If the time is within the eco mode time, use the last snapshot
-                if datetime.now() - self.last_picture_time <= timedelta(minutes=self.snapshot_throttle_interval):
-                    self.logger.info("Using cached image")
-                    return self.last_picture
-
             # If the camera is userStreamActive, try and pull a snapshot from the prebuffered stream
             scrypted_device = await scrypted_sdk.systemManager.api.getDeviceById(self.getScryptedProperty("id"))
             msos = await scrypted_device.getVideoStreamOptions()
@@ -689,6 +682,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     # If there is an error, log the error and try to get a snapshot from the Arlo cloud
                     self.logger.warning(f"Could not fetch from prebuffer due to: {e}")
                     self.logger.warning("Will try to fetch snapshot from Arlo cloud.")
+            else:
+                # Check if the eco mode is on and if the time is greater than 0
+                if self.eco_mode and self.snapshot_throttle_interval > 0:
+                    # If the time is within the eco mode time, use the last snapshot
+                    if datetime.now() - self.last_picture_time <= timedelta(minutes=self.snapshot_throttle_interval):
+                        self.logger.info("Using cached image")
+                        return self.last_picture
 
             # Try and get a snapshot url
             try:
@@ -696,8 +696,8 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             except Exception:
                 # If the pic_url is None, set the activityState to idle, log the error, and return a snapshot with failed on it
                 self.arlo_properties['activityState'] = "idle"
-                self.provider.arlo.Ping(self.arlo_basestation, self.arlo_device)
-                raise Exception(f"Error taking snapshot: no url returned")
+                await self.start_stop_stream()
+                raise Exception("Error taking snapshot: no url returned")
 
             # If the pic_url is not None, get the picture from the url
             self.logger.debug(f"Got snapshot URL at {pic_url}")
@@ -714,6 +714,28 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                             self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(await resp.read(), "image/jpeg")
                             self.last_picture_time = datetime.now()
                             return self.last_picture
+
+    @async_print_exception_guard
+    async def start_stop_stream(self):
+        mso = await self.getVideoStreamOptions(id="rtsp")
+        mso['refreshAt'] = round(time.time() * 1000) + 30 * 60 * 1000
+        container = mso["container"]
+
+        url = await self._getVideoStreamURL(mso["name"], container)
+
+        ffmpeg_input = {
+            'url': url,
+            'container': container,
+            'mediaStreamOptions': mso,
+            'inputArguments': [
+                '-f', 'null',
+                '-i', url,
+            ]
+        }
+
+        await scrypted_sdk.mediaManager.createFFmpegMediaObject(ffmpeg_input)
+        await asyncio.sleep(5)
+        await asyncio.wait_for(self.provider.arlo.StopStream(self.arlo_device), timeout=self.timeout)
 
     @async_print_exception_guard
     async def startRTCSignalingSession(self, scrypted_session):
@@ -909,7 +931,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 basestation.peer_cert,
                 self.provider.arlo_private_key,
             )
-            #proxy.MakeExtraVerbose()
+            proxy.MakeExtraVerbose()
             port = proxy.Start()
 
             if self.local_live_streaming_codec == "h.264":
