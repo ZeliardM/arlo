@@ -1099,27 +1099,6 @@ class Arlo(object):
             trigger,
             callback,
         )
-    
-    async def StopStream(self, camera):
-        """
-        This function stop rtsp video stream to refresh camera status.
-        """
-        
-        self.request.post(
-            f'https://{self.BASE_URL}/hmsweb/users/devices/stopStream',
-            params={
-                "to": camera.get('parentId'),
-                "from": self.user_id + "_web",
-                "resource": "cameras/" + camera.get('deviceId'),
-                "action": "set",
-                "publishResponse": True,
-                "transId": self.genTransId(),
-                "properties": {
-                    "activityState": "idle",
-                }
-            },
-            headers={"xcloudId":camera.get('xCloudId')}
-        )
 
     def GetMPDHeaders(self, url: str) -> dict:
         parsed = urlparse(url)
@@ -1405,8 +1384,11 @@ class Arlo(object):
         def callback(self, event):
             if "error" in event:
                 return None
-            properties = event.get("properties", {})
-            return properties
+            if event.get("from") == basestation_id:
+                properties = event.get("properties", {})
+                return properties
+            else:
+                return None
 
         return await self.TriggerAndHandleEvent(
             basestation,

@@ -720,15 +720,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                     self._arlo.Unsubscribe()
                     await self.do_arlo_setup()
             elif key == "stop_plugin":
-                """
-                if value == True:
-                    if self._arlo is not None and self._arlo.logged_in:
-                        self.invalidate_arlo_client()
-                        self.exit_imap()
-                elif value == False:
-                    if self.mfa_strategy == "IMAP":
-                        self.initialize_imap()
-                """
                 skip_arlo_client = True
                 verb = "stopped" if value else "enabled"
                 self.logger.info(f"Arlo plugin will be {verb}. Restarting...")

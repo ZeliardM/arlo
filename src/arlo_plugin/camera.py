@@ -644,7 +644,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         elif key == "print_debug":
             self.logger.info(f"Device Capabilities: {json.dumps(self.arlo_capabilities)}")
             self.logger.info(f"Smart Features: {json.dumps(self.arlo_smartFeatures)}")
-            self.logger.info(f"Camera Properties: {await asyncio.wait_for(self.provider.arlo.TriggerProperties(self.arlo_basestation, self.arlo_device), timeout=5)}")
+            self.logger.info(f"Camera Properties: {json.dumps(self.arlo_properties)}")
         else:
             self.storage.setItem(key, value)
         await self.onDeviceEvent(ScryptedInterface.Settings.value, None)
@@ -717,25 +717,20 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @async_print_exception_guard
     async def start_stop_stream(self):
-        mso = await self.getVideoStreamOptions(id="rtsp")
-        mso['refreshAt'] = round(time.time() * 1000) + 30 * 60 * 1000
-        container = mso["container"]
+        url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
 
-        url = await self._getVideoStreamURL(mso["name"], container)
+        ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
+        ffmpeg_args = [
+            "-rtsp_transport", "tcp",
+            "-i", url,
+            "-f", "null -",
+        ]
+        self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
 
-        ffmpeg_input = {
-            'url': url,
-            'container': container,
-            'mediaStreamOptions': mso,
-            'inputArguments': [
-                '-f', 'null',
-                '-i', url,
-            ]
-        }
-
-        await scrypted_sdk.mediaManager.createFFmpegMediaObject(ffmpeg_input)
-        await asyncio.sleep(5)
-        await asyncio.wait_for(self.provider.arlo.StopStream(self.arlo_device), timeout=self.timeout)
+        snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, *ffmpeg_args)
+        snapshot_ffmpeg_subprocess.start()
+        await asyncio.sleep(3)
+        snapshot_ffmpeg_subprocess.stop()
 
     @async_print_exception_guard
     async def startRTCSignalingSession(self, scrypted_session):
