@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, TYPE_CHECKING
+from typing import Any, List, TYPE_CHECKING
 
 from scrypted_sdk import ScryptedDeviceBase
 from scrypted_sdk.types import Device
@@ -23,6 +23,8 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
     provider: ArloProvider = None
     stop_subscriptions: bool = False
 
+    device_types = ['smss']
+
     def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId)
 
@@ -32,16 +34,18 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
         self.arlo_device = arlo_device
         self.arlo_basestation = arlo_basestation
         self.arlo_properties = arlo_properties
+        self.arlo_capabilities = {}
+        self.arlo_smartFeatures = {}
         self.provider = provider
         self.logger.setLevel(self.provider.get_current_log_level())
 
         try:
-            self.arlo_capabilities = {} if nativeId.endswith("smss") else self.provider.arlo.GetDeviceCapabilities(self.arlo_device)
-            self.arlo_smartFeatures = {} if nativeId.endswith("smss") else self.provider.arlo.GetSmartFeatures(self.arlo_device)
+            for device_type in ArloDeviceBase.device_types:
+                if not nativeId.endswith(device_type):
+                    self.arlo_capabilities = self.provider.arlo.GetDeviceCapabilities(self.arlo_device)
+                    self.arlo_smartFeatures = self.provider.arlo.GetSmartFeatures(self.arlo_device)
         except Exception as e:
             self.logger.warning(f"Could not load device capabilities and smart features: {e}")
-            self.arlo_capabilities = {}
-            self.arlo_smartFeatures = {}
         self.create_task(self._do_delayed_init())
 
     async def _do_delayed_init(self) -> None:
@@ -75,10 +79,10 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
 
         return {
             "info": {
-                "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip() if self.arlo_properties is not None or self.arlo_properties != {} else ''}".strip(),
+                "model": f"{self.arlo_device.get('modelId', '')} {self.arlo_properties.get('hwVersion', '').replace(self.arlo_device.get('modelId', ''), '').strip() if self.arlo_properties else ''}".strip(),
                 "manufacturer": "Arlo",
                 "serialNumber": self.arlo_device["deviceId"],
-                "firmware": self.arlo_properties["swVersion"] if self.arlo_properties is not None or self.arlo_properties != {} else "",
+                "firmware": self.arlo_properties.get("swVersion", "") if self.arlo_properties else "",
             },
             "nativeId": self.arlo_device["deviceId"],
             "name": self.arlo_device["deviceName"],
@@ -92,14 +96,16 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
         return []
 
     def has_feature(self, feature: str) -> bool:
-        if self.arlo_smartFeatures is None or self.arlo_smartFeatures == {}:
+        """Check if the device has a specific feature."""
+        if not self.arlo_smartFeatures:
             return False
 
         smartfeatures = self.arlo_smartFeatures.get("planFeatures", {})
         return smartfeatures.get(feature, False)
 
-    def has_capability(self, capability: str, subCapability: str = None, subSubCapability: str = None) -> any:
-        if self.arlo_capabilities is None or self.arlo_capabilities == {}:
+    def has_capability(self, capability: str, subCapability: str = None, subSubCapability: str = None) -> Any:
+        """Check if the device has a specific capability."""
+        if not self.arlo_capabilities:
             return False
 
         capabilities = self.arlo_capabilities.get("Capabilities", {})
@@ -109,11 +115,11 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
         if subSubCapability:
             capabilities = capabilities.get(subSubCapability, {})
 
-        # Check if 'capability' exists in the dictionary
         return capability in capabilities
 
-    def get_property(self, property: str, subProperty: str = None) -> any:
-        if self.arlo_properties is None or self.arlo_properties == {}:
+    def get_property(self, property: str, subProperty: str = None) -> Any:
+        """Get a specific property of the device."""
+        if not self.arlo_properties:
             return None
 
         if subProperty:
@@ -121,7 +127,8 @@ class ArloDeviceBase(ScryptedDeviceBase, ScryptedDeviceLoggerMixin, BackgroundTa
         return self.arlo_properties.get(property, None)
 
     def has_property(self, property: str, subProperty: str = None) -> bool:
-        if self.arlo_properties is None or self.arlo_properties == {}:
+        """Check if the device has a specific property."""
+        if not self.arlo_properties:
             return False
 
         if subProperty:
