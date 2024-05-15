@@ -760,6 +760,32 @@ class Arlo(object):
             self.HandleEvents(basestation, resource, [('is', 'sipCallActive')], callbackwrapper)
         )
 
+    def SubscribeToStreamStartSnapshotEvents(self, camera, callback):
+        """
+        Use this method to subscribe to camera local stream snapshot events.
+        You must provide a callback function which will get called once per event.
+
+        The callback function for these events should be async to wait for the snapshot to be generated.
+        The callback function should have the following signature:
+        async def callback(event)
+
+        Returns the Task object that contains the subscription loop.
+        """
+        resource = f"cameras/{camera.get('deviceId')}"
+
+        async def callbackwrapper(self, event):
+            properties = event.get('properties', {})
+            stop = None
+            if 'presignedLastImageUrl' in properties:
+                stop = await callback(event['properties'].get('presignedLastImageUrl', {}))
+            if not stop:
+                return None
+            return stop
+
+        return asyncio.get_event_loop().create_task(
+            self.HandleEvents(camera, resource, [('lastImageSnapshotAvailable', 'presignedLastImageUrl')], callbackwrapper)
+        )
+
     def SubscribeToStreamEndSnapshotEvents(self, camera, callback):
         """
         Use this method to subscribe to camera end of stream snapshot events.
@@ -784,32 +810,6 @@ class Arlo(object):
 
         return asyncio.get_event_loop().create_task(
             self.HandleEvents(camera, resource, [None], callbackwrapper)
-        )
-
-    def SubscribeToLocalStreamSnapshotEvents(self, camera, callback):
-        """
-        Use this method to subscribe to camera local stream snapshot events.
-        You must provide a callback function which will get called once per event.
-
-        The callback function for these events should be async to wait for the snapshot to be generated.
-        The callback function should have the following signature:
-        async def callback(event)
-
-        Returns the Task object that contains the subscription loop.
-        """
-        resource = f"cameras/{camera.get('deviceId')}"
-
-        async def callbackwrapper(self, event):
-            properties = event.get('properties', {})
-            stop = None
-            if 'presignedLastImageUrl' in properties:
-                stop = await callback(event['properties'].get('presignedLastImageUrl', {}))
-            if not stop:
-                return None
-            return stop
-
-        return asyncio.get_event_loop().create_task(
-            self.HandleEvents(camera, resource, [('lastImageSnapshotAvailable', 'presignedLastImageUrl')], callbackwrapper)
         )
 
     def SubscribeToDoorbellEvents(self, basestation, doorbell, callback):
@@ -1365,42 +1365,53 @@ class Arlo(object):
 
     async def TriggerProperties(self, basestation, camera=None):
         basestation_id = basestation.get("deviceId")
-        resource = f"cameras/{camera.get('deviceId')}" if camera else "basestation"
+        camera_parent_id = camera.get("parentId") if camera else None
 
-        def trigger(self):
-            self.request.post(
-                f"https://{self.BASE_URL}/hmsweb/users/devices/notify/{basestation_id}",
-                params={
-                    "to": basestation_id,
-                    "from": self.user_id + "_web",
-                    "resource": resource,
-                    "action": "get",
-                    "publishResponse": False,
-                    "transId": self.genTransId(),
-                },
-                headers={"xcloudId":basestation.get("xCloudId")}
+        if camera and basestation_id == camera_parent_id:
+            resources = [f"cameras/{camera.get('deviceId')}", "basestation"]
+        else:
+            resources = [f"cameras/{camera.get('deviceId')}"] if camera else ["basestation"]
+
+        properties = {}
+
+        for resource in resources:
+            def trigger(self):
+                self.request.post(
+                    f"https://{self.BASE_URL}/hmsweb/users/devices/notify/{basestation_id}",
+                    params={
+                        "to": basestation_id,
+                        "from": self.user_id + "_web",
+                        "resource": resource,
+                        "action": "get",
+                        "publishResponse": False,
+                        "transId": self.genTransId(),
+                    },
+                    headers={"xcloudId":basestation.get("xCloudId")}
+                )
+
+            def callback(self, event):
+                if "error" in event:
+                    return None
+                if event.get("from") == basestation_id:
+                    resource_properties = event.get("properties", {})
+                    properties.update(resource_properties)
+                    return resource_properties
+                else:
+                    return None
+
+            await self.TriggerAndHandleEvent(
+                basestation,
+                resource,
+                [
+                    (action, property)
+                    for action in ["is"]
+                    for property in ["interfaceVersion"]
+                ],
+                trigger,
+                callback,
             )
 
-        def callback(self, event):
-            if "error" in event:
-                return None
-            if event.get("from") == basestation_id:
-                properties = event.get("properties", {})
-                return properties
-            else:
-                return None
-
-        return await self.TriggerAndHandleEvent(
-            basestation,
-            resource,
-            [
-                (action, property)
-                for action in ["is"]
-                for property in ["interfaceVersion"]
-            ],
-            trigger,
-            callback,
-        )
+        return properties
 
     def GetLocations(self) -> list:
         locations = self._getLocations()

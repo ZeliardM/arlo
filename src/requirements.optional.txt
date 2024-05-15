@@ -1,4 +1,0 @@
-pillow==10.3.0
---extra-index-url=https://bjia56.github.io/armv7l-wheels/
---extra-index-url=https://bjia56.github.io/scrypted-arlo-go/
---prefer-binary

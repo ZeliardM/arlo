@@ -152,9 +152,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     reboot_event: dict = None
 
     # eco mode bookkeeping
-    picture_lock: asyncio.Lock = None
-    last_picture: bytes = None
-    last_picture_time: datetime = datetime(1970, 1, 1)
+    snapshot_lock: asyncio.Lock = None
+    last_snapshot: bytes = None
+    last_snapshot_time: datetime = datetime(1970, 1, 1)
 
     # socket logger
     info_logger: LoggerServer
@@ -164,7 +164,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     def __init__(self, nativeId: str, arlo_device: dict, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_device, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
 
-        self.picture_lock = asyncio.Lock()
+        self.snapshot_lock = asyncio.Lock()
 
         self.info_logger = LoggerServer(self, self.logger.info)
         self.debug_logger = LoggerServer(self, self.logger.debug)
@@ -184,8 +184,8 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_smart_motion_subscription()
         self.start_reboot_subscription()
         self.start_activity_state_subscription()
+        self.start_stream_start_snapshot_subscription()
         self.start_stream_end_snapshot_subscription()
-        self.start_local_stream_snapshot_subscription()
         self.start_sip_call_active_subscription()
 
     async def delayed_init(self) -> None:
@@ -308,26 +308,26 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.provider.arlo.SubscribeToDeviceStateEvents(self.arlo_basestation, callback, self.arlo_device)
         )
 
-    def start_image_subscription(self, subscription_method, subscription_name):
-        async def callback(pic_url):
-            if pic_url:
-                self.logger.info(f"Updating cached image for {subscription_name}")
+    def start_snapshot_subscription(self, subscription_method, subscription_name):
+        async def callback(snapshot_url):
+            if snapshot_url:
+                self.logger.info(f"Updating cached snapshot for {subscription_name}")
                 try:
-                    # Pass the image_url to the takePicture method
-                    await self.takePicture({'url': pic_url})
+                    async with async_timeout(self.timeout):
+                        await self.createSnapshotFromUrl(snapshot_url)
                 except Exception as e:
-                    self.logger.error(f"Error updating cached image for {subscription_name}: {e}")
+                    self.logger.error(f"Error updating cached snapshot for {subscription_name}: {e}")
             return self.stop_subscriptions
 
         self.register_task(
             subscription_method(self.arlo_device, callback)
         )
 
-    def start_stream_end_snapshot_subscription(self) -> None:
-        self.start_image_subscription(self.provider.arlo.SubscribeToStreamEndSnapshotEvents, 'stream end snapshot')
+    def start_stream_start_snapshot_subscription(self) -> None:
+        self.start_snapshot_subscription(self.provider.arlo.SubscribeToStreamStartSnapshotEvents, 'stream start snapshot')
 
-    def start_local_stream_snapshot_subscription(self) -> None:
-        self.start_image_subscription(self.provider.arlo.SubscribeToLocalStreamSnapshotEvents, 'local stream snapshot')
+    def start_stream_end_snapshot_subscription(self) -> None:
+        self.start_snapshot_subscription(self.provider.arlo.SubscribeToStreamEndSnapshotEvents, 'stream end snapshot')
 
     def start_sip_call_active_subscription(self) -> None:
         async def callback(sip_call_active):
@@ -648,74 +648,83 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 return False
         return True
 
-    def _check_picture_dimensions(self, picture_bytes: bytes) -> None:
+    def _check_snapshot_dimensions(self, snapshot_bytes: bytes) -> None:
         if not PIL:
+            self.logger.warning("PIL is not installed, cannot check snapshot dimensions")
             return
 
-        image = PIL.Image.open(io.BytesIO(picture_bytes))
-        width, height = image.size
-        self.logger.debug(f"Picture dimensions: {width}x{height}")
+        snapshot = PIL.Image.open(io.BytesIO(snapshot_bytes))
+        width, height = snapshot.size
+        self.logger.debug(f"Snapshot dimensions: {width}x{height}")
 
     async def getPictureOptions(self) -> List[ResponsePictureOptions]:
         return []
 
     @async_print_exception_guard
     async def takePicture(self, options: dict = None) -> MediaObject:
-        self.logger.info("Taking picture")
+        self.logger.info("Taking snapshot")
 
-        async with self.picture_lock:
-            if not(options and 'url' in options):
-                # If the camera is userStreamActive, try and pull a snapshot from the prebuffered stream
-                scrypted_device = await scrypted_sdk.systemManager.api.getDeviceById(self.getScryptedProperty("id"))
-                msos = await scrypted_device.getVideoStreamOptions()
-                prebuffer_id = next((m['id'] for m in msos if 'prebuffer' in m), None)
-                if prebuffer_id is not None:
-                    self.logger.info("Getting snapshot from prebuffer")
-                    try:
-                        # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
-                        buf = await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
-                        self._check_picture_dimensions(buf)
-                        self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
-                        self.last_picture_time = datetime.now()
-                        return self.last_picture
-                    except Exception as e:
-                        # If there is an error, log the error and try to get a snapshot from the Arlo cloud
-                        self.logger.warning(f"Could not fetch from prebuffer due to: {e}")
-                        self.logger.warning("Will try to fetch snapshot from Arlo cloud.")
-                else:
-                    # Check if the eco mode is on and if the time is greater than 0
-                    if self.eco_mode and self.snapshot_throttle_interval > 0:
-                        # If the time is within the eco mode time, use the last snapshot
-                        if datetime.now() - self.last_picture_time <= timedelta(minutes=self.snapshot_throttle_interval):
-                            self.logger.info("Using cached image")
-                            return self.last_picture
+        async with self.snapshot_lock:
+            # If the stream is active or prebuffered, try and get a snapshot from the prebuffered stream
+            scrypted_device = await scrypted_sdk.systemManager.api.getDeviceById(self.getScryptedProperty("id"))
+            msos = await scrypted_device.getVideoStreamOptions()
+            prebuffer_id = next((m['id'] for m in msos if 'prebuffer' in m), None)
+            if prebuffer_id is not None:
+                self.logger.info("Getting snapshot from prebuffer")
+                try:
+                    # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
+                    buf = await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
+                    self._check_snapshot_dimensions(buf)
+                    self.last_snapshot = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
+                    self.last_snapshot_time = datetime.now()
+                    return self.last_snapshot
+                except Exception as e:
+                    # If there is an error, log the error and try to get a snapshot from the Arlo Cloud
+                    self.logger.warning(f"Could not get snapshot from prebuffer due to: {e}")
+                    self.logger.warning("Will try to get snapshot from Arlo Cloud.")
+            else:
+                # Check if the eco mode is on and if the time is greater than 0
+                if self.eco_mode and self.snapshot_throttle_interval > 0:
+                    # If the time is within the eco mode time, use the last snapshot
+                    if datetime.now() - self.last_snapshot_time <= timedelta(minutes=self.snapshot_throttle_interval):
+                        self.logger.info("Getting snapshot from cache")
+                        return self.last_snapshot
 
-            # Try and get a snapshot url
+            # If there is no active or prebuffered stream or eco mode is off or not within the eco mode time range, try and get a snapshot url
             try:
-                pic_url = options.get('url') if options and 'url' in options else await asyncio.wait_for(self.provider.arlo.TriggerFullFrameSnapshot(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+                snapshot_url = await asyncio.wait_for(self.provider.arlo.TriggerFullFrameSnapshot(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
             except Exception:
-                # If the pic_url is None, set the activityState to idle, log the error, and return a snapshot with failed on it
-                self.arlo_properties['activityState'] = "idle"
-                await self.start_stop_stream()
-                raise Exception("Error taking snapshot: no url returned")
+                # If the snapshot_url is None, set the activityState to idle, start and stop a stream to force a snapshot refresh, and raise an exception
+                await self.snapshotErrorCall()
+                raise Exception("Error getting snapshot from Arlo Cloud: no url returned")
 
-            # If the pic_url is not None, get the picture from the url
-            self.logger.debug(f"Got snapshot URL at {pic_url}")
+            # If the snapshot_url is not None, get the snapshot from the url
+            self.logger.debug(f"Got snapshot URL at {snapshot_url}")
             async with async_timeout(self.timeout):
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(pic_url) as resp:
-                        if resp.status != 200:
-                            # If the get is not status 200 set the activityState to idle, raise the error with the status, and return the snapshot with failed on it
-                            self.arlo_properties['activityState'] = "idle"
-                            raise Exception(f"Unexpected status downloading snapshot image: {resp.status}")
-                        else:
-                            # If the status is 200, set the response as the cached snapshot and set the time as now and return the snapshot
-                            self.arlo_properties['activityState'] = "idle"
-                            buf = await resp.read()
-                            self._check_picture_dimensions(buf)
-                            self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
-                            self.last_picture_time = datetime.now()
-                            return self.last_picture
+                await self.createSnapshotFromUrl(snapshot_url)
+                return self.last_snapshot
+
+    @async_print_exception_guard
+    async def createSnapshotFromUrl(self, snapshot_url) -> MediaObject:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(snapshot_url) as resp:
+                if resp.status != 200:
+                    # If the get is not status 200 set the activityState to idle, raise the error with the status
+                    await self.snapshotErrorCall()
+                    raise Exception(f"Unexpected status downloading snapshot image: {resp.status}")
+                else:
+                    # If the status is 200, set the response as the cached snapshot and set the time as now and return the snapshot
+                    self.arlo_properties['activityState'] = "idle"
+                    buf = await resp.read()
+                    self._check_snapshot_dimensions(buf)
+                    self.last_snapshot = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
+                    self.last_snapshot_time = datetime.now()
+                
+    @async_print_exception_guard
+    async def snapshotErrorCall(self) -> None:
+        # Set the activityState to idle and start and stop a stream to force a snapshot refresh
+        self.arlo_properties['activityState'] = "idle"
+        await self.start_stop_stream()
 
     @async_print_exception_guard
     async def start_stop_stream(self):

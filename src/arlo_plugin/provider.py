@@ -844,6 +844,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 self.logger.info(f"Skipping manifest for basestation {nativeId} ({basestation['modelId']}) as it is hidden.")
                 continue
 
+            if nativeId in self.arlo_cameras:
+                self.logger.info(f"Skipping basestation {nativeId} ({basestation['modelId']}) because it is also a camera.")
+                continue
+
             self.logger.debug(f"Creating {nativeId}")
 
             arlo_properties = await self.getDeviceProperties(basestation)
@@ -869,9 +873,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
         if len(self.arlo_basestations) != len(basestation_devices):
             self.logger.info(f"Created {len(self.arlo_basestations)} basestations, but only {len(basestation_devices)} are shown.")
-            self.logger.info("This could be because some of the basestations are hidden.")
-            self.logger.info("If a basestation is not hidden but is still missing, ensure all basestations are shared "
-                             "with admin permissions in the Arlo App.")
+            self.logger.info("This could be because some of the basestations are hidden or are also cameras.")
+            self.logger.info("If a basestation is not hidden and not a camera but is still missing, ensure "
+                             "all basestations are added correctly in the Arlo App.")
         else:
             self.logger.info(f"Created {len(self.arlo_basestations)} basestations.")
 
@@ -910,8 +914,8 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         if len(self.arlo_cameras) != len(camera_devices):
             self.logger.info(f"Created {len(self.arlo_cameras)} cameras, but only {len(camera_devices)} are shown.")
             self.logger.info("This could be because some cameras are hidden.")
-            self.logger.info("If a camera is not hidden but is still missing, ensure all cameras are shared "
-                             "with admin permissions in the Arlo app.")
+            self.logger.info("If a camera is not hidden but is still missing, ensure all cameras are added "
+                             "correctly in the Arlo app.")
         else:
             self.logger.info(f"Created {len(self.arlo_cameras)} cameras")
 
