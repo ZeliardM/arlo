@@ -11,12 +11,6 @@ import time
 import threading
 from typing import List, TYPE_CHECKING
 
-try:
-    import PIL
-    import PIL.Image
-except:
-    PIL = None
-
 import scrypted_arlo_go
 
 import scrypted_sdk
@@ -184,8 +178,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_smart_motion_subscription()
         self.start_reboot_subscription()
         self.start_activity_state_subscription()
-        self.start_stream_start_snapshot_subscription()
-        self.start_stream_end_snapshot_subscription()
         self.start_sip_call_active_subscription()
 
     async def delayed_init(self) -> None:
@@ -307,27 +299,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.register_task(
             self.provider.arlo.SubscribeToDeviceStateEvents(self.arlo_basestation, callback, self.arlo_device)
         )
-
-    def start_snapshot_subscription(self, subscription_method, subscription_name):
-        async def callback(snapshot_url):
-            if snapshot_url:
-                self.logger.info(f"Updating cached snapshot for {subscription_name}")
-                try:
-                    async with async_timeout(self.timeout):
-                        await self.createSnapshotFromUrl(snapshot_url)
-                except Exception as e:
-                    self.logger.error(f"Error updating cached snapshot for {subscription_name}: {e}")
-            return self.stop_subscriptions
-
-        self.register_task(
-            subscription_method(self.arlo_device, callback)
-        )
-
-    def start_stream_start_snapshot_subscription(self) -> None:
-        self.start_snapshot_subscription(self.provider.arlo.SubscribeToStreamStartSnapshotEvents, 'stream start snapshot')
-
-    def start_stream_end_snapshot_subscription(self) -> None:
-        self.start_snapshot_subscription(self.provider.arlo.SubscribeToStreamEndSnapshotEvents, 'stream end snapshot')
 
     def start_sip_call_active_subscription(self) -> None:
         async def callback(sip_call_active):
@@ -533,17 +504,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     "type": "boolean",
                 },
             )
-        result.append(
-            {
-                "group": "General",
-                "key": "eco_mode",
-                "title": "Eco Mode",
-                "value": self.eco_mode,
-                "description": "Configures Scrypted to limit the number of requests made to this camera. " + \
-                               "Additional eco mode settings will appear when this is turned on.",
-                "type": "boolean",
-            },
-        )
         if self.has_sip_webrtc_streaming:
             result.append(
                 {
@@ -581,20 +541,19 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     "choices": self.local_live_streaming_codec_list,
                 }
             )
-        if self.eco_mode:
-            result.append(
-                {
-                    "group": "Eco Mode",
-                    "key": "snapshot_throttle_interval",
-                    "title": "Snapshot Throttle Interval",
-                    "value": self.snapshot_throttle_interval,
-                    "description": "Time, in minutes, to throttle snapshot requests. " + \
-                                   "When eco mode is on, snapshot requests to the camera will be throttled for the given duration. " + \
-                                   "Cached snapshots may be returned if the time since the last snapshot has not exceeded the interval. " + \
-                                   "A value of 0 will disable throttling even when eco mode is on.",
-                    "type": "number",
-                }
-            )
+        result.append(
+            {
+                "group": "Snapshot",
+                "key": "snapshot_throttle_interval",
+                "title": "Snapshot Throttle Interval",
+                "value": self.snapshot_throttle_interval,
+                "description": "Time, in minutes, to throttle snapshot requests. " + \
+                                "Snapshot requests to the camera will be throttled for the given duration. " + \
+                                "Cached snapshots will be returned if the time since the last snapshot has not exceeded the interval. " + \
+                                "A value of 0 will disable throttling.",
+                "type": "number",
+            }
+        )
         result.append(
             {
                 "group": "General",
@@ -648,15 +607,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 return False
         return True
 
-    def _check_snapshot_dimensions(self, snapshot_bytes: bytes) -> None:
-        if not PIL:
-            self.logger.warning("PIL is not installed, cannot check snapshot dimensions")
-            return
-
-        snapshot = PIL.Image.open(io.BytesIO(snapshot_bytes))
-        width, height = snapshot.size
-        self.logger.debug(f"Snapshot dimensions: {width}x{height}")
-
     async def getPictureOptions(self) -> List[ResponsePictureOptions]:
         return []
 
@@ -674,35 +624,30 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 try:
                     # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
                     buf = await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
-                    self._check_snapshot_dimensions(buf)
                     self.last_snapshot = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
                     self.last_snapshot_time = datetime.now()
                     return self.last_snapshot
                 except Exception as e:
                     # If there is an error, log the error and try to get a snapshot from the Arlo Cloud
                     self.logger.warning(f"Could not get snapshot from prebuffer due to: {e}")
-                    self.logger.warning("Will try to get snapshot from Arlo Cloud.")
-            else:
-                # Check if the eco mode is on and if the time is greater than 0
-                if self.eco_mode and self.snapshot_throttle_interval > 0:
-                    # If the time is within the eco mode time, use the last snapshot
-                    if datetime.now() - self.last_snapshot_time <= timedelta(minutes=self.snapshot_throttle_interval):
-                        self.logger.info("Getting snapshot from cache")
-                        return self.last_snapshot
+                    self.logger.warning("Will return cached snapshot.")
 
-            # If there is no active or prebuffered stream or eco mode is off or not within the eco mode time range, try and get a snapshot url
-            try:
-                snapshot_url = await asyncio.wait_for(self.provider.arlo.TriggerFullFrameSnapshot(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
-            except Exception:
-                # If the snapshot_url is None, set the activityState to idle, start and stop a stream to force a snapshot refresh, and raise an exception
-                await self.snapshotErrorCall()
-                raise Exception("Error getting snapshot from Arlo Cloud: no url returned")
-
-            # If the snapshot_url is not None, get the snapshot from the url
-            self.logger.debug(f"Got snapshot URL at {snapshot_url}")
-            async with async_timeout(self.timeout):
-                await self.createSnapshotFromUrl(snapshot_url)
-                return self.last_snapshot
+            # Always return the cached snapshot
+            self.logger.info("Getting snapshot from cache")
+            if self.snapshot_throttle_interval == 0 or (self.snapshot_throttle_interval > 0 and datetime.now() - self.last_snapshot_time >= timedelta(minutes=self.snapshot_throttle_interval)):
+                # If the interval is zero or the time is greater than the throttle interval, try to get a new snapshot
+                self.logger.info("Getting new snapshot")
+                try:
+                    snapshot_url = await asyncio.wait_for(self.provider.arlo.TriggerFullFrameSnapshot(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+                    # If the snapshot_url is not None, get the snapshot from the url
+                    self.logger.debug(f"Got snapshot URL at {snapshot_url}")
+                    async with async_timeout(self.timeout):
+                        await self.createSnapshotFromUrl(snapshot_url)
+                except Exception:
+                    # If the snapshot_url is None, set the activityState to idle, start and stop a stream to force a snapshot refresh, and raise an exception
+                    await self.snapshotErrorCall()
+                    raise Exception("Error getting snapshot from Arlo Cloud: no url returned")
+            return self.last_snapshot
 
     @async_print_exception_guard
     async def createSnapshotFromUrl(self, snapshot_url) -> MediaObject:
@@ -716,10 +661,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     # If the status is 200, set the response as the cached snapshot and set the time as now and return the snapshot
                     self.arlo_properties['activityState'] = "idle"
                     buf = await resp.read()
-                    self._check_snapshot_dimensions(buf)
                     self.last_snapshot = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
                     self.last_snapshot_time = datetime.now()
-                
+
     @async_print_exception_guard
     async def snapshotErrorCall(self) -> None:
         # Set the activityState to idle and start and stop a stream to force a snapshot refresh
@@ -740,7 +684,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
         snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, *ffmpeg_args)
         snapshot_ffmpeg_subprocess.start()
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
         snapshot_ffmpeg_subprocess.stop()
 
     @async_print_exception_guard
