@@ -4,11 +4,18 @@ import asyncio
 import aiohttp
 from async_timeout import timeout as async_timeout
 from datetime import datetime, timedelta
+import io
 import json
 import socket
 import time
 import threading
 from typing import List, TYPE_CHECKING
+
+try:
+    import PIL
+    import PIL.Image
+except:
+    PIL = None
 
 import scrypted_arlo_go
 
@@ -641,6 +648,14 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 return False
         return True
 
+    def _check_picture_dimensions(self, picture_bytes: bytes) -> None:
+        if not PIL:
+            return
+
+        image = PIL.Image.open(io.BytesIO(picture_bytes))
+        width, height = image.size
+        self.logger.debug(f"Picture dimensions: {width}x{height}")
+
     async def getPictureOptions(self) -> List[ResponsePictureOptions]:
         return []
 
@@ -659,6 +674,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     try:
                         # Save the snapshot from the stream as the last snapshot and set the current time as the last snapshot time
                         buf = await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
+                        self._check_picture_dimensions(buf)
                         self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
                         self.last_picture_time = datetime.now()
                         return self.last_picture
@@ -695,7 +711,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                         else:
                             # If the status is 200, set the response as the cached snapshot and set the time as now and return the snapshot
                             self.arlo_properties['activityState'] = "idle"
-                            self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(await resp.read(), "image/jpeg")
+                            buf = await resp.read()
+                            self._check_picture_dimensions(buf)
+                            self.last_picture = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
                             self.last_picture_time = datetime.now()
                             return self.last_picture
 
