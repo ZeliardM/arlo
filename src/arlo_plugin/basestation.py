@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings): 
 
     vss: ArloSirenVirtualSecuritySystem = None
-    reboot_event: dict = None
+    device_status: str = None
 
     def __init__(self, nativeId: str, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
@@ -33,19 +33,15 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             self.logger.debug("Certificates have not been created with Arlo, proceeding with Certificate Creation")
 
         if self.has_local_live_streaming and not cert_registered:
-            self.logger.info("Creating Certificates with Arlo")
             self.createCertificates()
 
         if self.has_local_live_streaming:
             await self.mdns()
 
-        self.start_reboot_subscription()
-        self.start_state_subscription()
-
     def createCertificates(self) -> None:
         certificates = self.provider.arlo.CreateCertificate(self.arlo_basestation, "".join(self.provider.arlo_public_key[27:-25].splitlines()))
         if certificates:
-            self.logger.info("Certificates have been created with Arlo, parsing certificates")
+            self.logger.debug("Certificates have been created with Arlo, parsing certificates")
             self.parseCertificates(certificates)
         else:
             self.logger.error("Failed to create Certificates with Arlo")
@@ -55,7 +51,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         deviceCert = certificates['certsData'][0]['deviceCert']
         icaCert = certificates['icaCert']
         if peerCert and deviceCert and icaCert:
-            self.logger.info("Certificates have been parsed, storing certificates")
+            self.logger.debug("Certificates have been parsed, storing certificates")
             self.storeCertificates(peerCert, deviceCert, icaCert)
         else:
             if not peerCert:
@@ -72,16 +68,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         self.storage.setItem("peer_cert", peerCert)
         self.storage.setItem("device_cert", deviceCert)
         self.storage.setItem("ica_cert", icaCert)
-        self.logger.info("Certificates have been stored with Scrypted")
-
-    def start_reboot_subscription(self) -> None:
-        def callback(reboot):
-            self.reboot_event = reboot
-            return self.stop_subscriptions
-
-        self.register_task(
-            self.provider.arlo.SubscribeToRebootEvents(self.arlo_device, callback)
-        )
+        self.logger.debug("Certificates have been stored with Scrypted")
 
     def start_state_subscription(self) -> None:
         def callback(state):
@@ -118,7 +105,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     async def mdns(self) -> None:
         self.storage.setItem("mdns_boolean", False)
-        self.logger.info("Initializing mDNS Discovery for basestation.")
+        self.logger.debug("Initializing mDNS Discovery for basestation.")
         for i in range(5):
             try:
                 mdns = AsyncBrowser()
@@ -126,14 +113,14 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
                 self.storage.setItem("mdns_boolean", bool(mdns.services))
                 if self.mdns_boolean == True:
                     if i == 0:
-                        self.logger.info(f"Basestation found in mDNS, took {i+1} try.")
+                        self.logger.debug(f"Basestation found in mDNS, took {i+1} try.")
                     else:
-                        self.logger.info(f"Basestation found in mDNS, took {i+1} tries.")
+                        self.logger.debug(f"Basestation found in mDNS, took {i+1} tries.")
                     self.storage.setItem("ip_addr", mdns.services[self.arlo_device['deviceId']].get('address'))
                     self.storage.setItem("hostname", mdns.services[self.arlo_device['deviceId']].get('server'))
                     break
             except:
-                self.logger.info("Basestation not found, trying mDNS again.")
+                self.logger.debug("Basestation not found, trying mDNS again.")
 
             await asyncio.sleep(0.5)
         else:
@@ -258,8 +245,11 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             self.logger.debug(f'Peer Certificate:\n{self.peer_cert}')
             self.logger.debug(f'Device Certificate:\n{self.device_cert}')
             self.logger.debug(f'ICA Certificate:\n{self.ica_cert}')
+            # self.logger.debug(f'Public Key:\n{self.provider.arlo_public_key}')
+            # self.logger.debug(f'Private Key:\n{self.provider.arlo_private_key}')
         elif key == "restart_device":
             self.logger.info("Restarting Device")
+            self.device_status = "Rebooting"
             self.provider.arlo.RestartDevice(self.arlo_device["deviceId"])
         elif key in ["ip_addr", "hostname"]:
             self.storage.setItem(key, value)

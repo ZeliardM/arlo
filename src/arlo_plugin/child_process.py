@@ -9,7 +9,7 @@ import scrypted_arlo_go
 HEARTBEAT_INTERVAL = 5
 
 
-def multiprocess_main(name, logger_port, child_conn, exe, args):
+def multiprocess_main(name, logger_port, child_conn, exe, args, queue=None, binary_output=False):
     logger = scrypted_arlo_go.NewTCPLogger(logger_port, "HeartbeatChildProcess")
 
     logger.Send(f"{name} starting\n")
@@ -17,15 +17,18 @@ def multiprocess_main(name, logger_port, child_conn, exe, args):
 
     # pull stdout and stderr from the subprocess and forward it over to
     # our tcp logger
-    def logging_thread(stdstream):
+    def logging_thread(stdstream, is_stderr):
         while True:
             line = stdstream.readline()
             if not line:
                 break
-            line = str(line, 'utf-8')
-            logger.Send(line)
-    stdout_t = threading.Thread(target=logging_thread, args=(sp.stdout,))
-    stderr_t = threading.Thread(target=logging_thread, args=(sp.stderr,))
+            if binary_output and not is_stderr:
+                queue.put(line)  # push the binary output to the queue
+            else:
+                line = str(line, 'utf-8')
+                logger.Send(line)
+    stdout_t = threading.Thread(target=logging_thread, args=(sp.stdout, False))
+    stderr_t = threading.Thread(target=logging_thread, args=(sp.stderr, True))
     stdout_t.start()
     stderr_t.start()
 
@@ -63,14 +66,20 @@ class HeartbeatChildProcess:
     exit the child if the parent has terminated.
     """
 
-    def __init__(self, name, logger_port, exe, *args):
+    def __init__(self, name, logger_port, exe, binary_output=False, *args):
         self.name = name
         self.logger_port = logger_port
         self.exe = exe
         self.args = args
 
         self.parent_conn, self.child_conn = multiprocessing.Pipe()
-        self.process = multiprocessing.Process(target=multiprocess_main, args=(name, logger_port, self.child_conn, exe, args))
+        if binary_output:
+            self.queue = multiprocessing.Queue()
+            self.binary_output = binary_output
+            self.output = []
+            self.process = multiprocessing.Process(target=multiprocess_main, args=(name, logger_port, self.child_conn, exe, args, self.queue, binary_output))
+        else:
+            self.process = multiprocessing.Process(target=multiprocess_main, args=(name, logger_port, self.child_conn, exe, args))
         self.process.daemon = True
         self._stop = False
 
@@ -91,3 +100,9 @@ class HeartbeatChildProcess:
                 self.stop()
                 break
             self.parent_conn.send(True)
+
+    def buffer(self):
+        if self.binary_output:
+            while not self.queue.empty():  # retrieve the output from the queue
+                self.output.append(self.queue.get())
+            return b''.join(self.output)

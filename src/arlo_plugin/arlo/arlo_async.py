@@ -671,35 +671,6 @@ class Arlo(object):
             self.HandleEvents(basestation, resource, [('is', 'chargeNotificationLedEnable')], callbackwrapper)
         )
 
-    def SubscribeToRebootEvents(self, device, callback):
-        """
-        Use this method to subscribe to device reboot events. You must provide a callback function which will get called once per device reboot event.
-
-        Technically speaking, Arlo doesn't produce device reboot events. This is used as a callback for when device reboot is initiated by the user.
-
-        The callback function should have the following signature:
-        def callback(event)
-
-        This is an example of handling a specific event, in reality, you'd probably want to write a callback for HandleEvents()
-        that has a big switch statement in it to handle all the various events Arlo produces.
-
-        Returns the Task object that contains the subscription loop.
-        """
-        resource = 'diagnostics'
-
-        def callbackwrapper(self, event):
-            properties = event.get('from', {})
-            stop = None
-            if device['deviceId'] in properties:
-                stop = callback(event)
-            if not stop:
-                return None
-            return stop
-
-        return asyncio.get_event_loop().create_task(
-            self.HandleEvents(device, resource, [('reboot')], callbackwrapper)
-        )
-
     def SubscribeToDeviceStateEvents(self, basestation, callback, camera=None):
         """
         Use this method to subscribe to basestation or camera activity state events.
@@ -1313,9 +1284,10 @@ class Arlo(object):
 
     async def TriggerProperties(self, basestation, camera=None):
         basestation_id = basestation.get("deviceId")
+        camera_id = camera.get("deviceId") if camera else None
         camera_parent_id = camera.get("parentId") if camera else None
 
-        if camera and basestation_id == camera_parent_id:
+        if camera and camera_id == camera_parent_id:
             resources = [f"cameras/{camera.get('deviceId')}", "basestation"]
         else:
             resources = [f"cameras/{camera.get('deviceId')}"] if camera else ["basestation"]
