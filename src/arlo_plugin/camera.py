@@ -614,25 +614,26 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 scrypted_device, prebuffer_id = await self.getScryptedDeviceAndPrebufferId()
 
                 if scrypted_device and prebuffer_id is not None:
-                    self.logger.info("Attempting to get snapshot from Scrypted Prebuffer")
+                    self.logger.info("Attempting to create snapshot from Scrypted Prebuffer")
                     try:
                         buf = await self.getBuffer((scrypted_device, prebuffer_id))
                         self.logger.debug("Successfully got buffer from Scrypted Prebuffer")
                         return await self.createSnapshotFromBuffer(buf)
                     except Exception as e:
-                        self.logger.warning(f"Failed to get snapshot from Scrypted Prebuffer: {e}")
+                        self.logger.warning(f"Failed to create snapshot from Scrypted Prebuffer: {e}")
                         self.logger.debug(e, exc_info=True)
 
                 if self.isTimeForNewSnapshot():
-                    self.logger.info("Attempting to get new snapshot from Arlo Cloud URL")
+                    self.logger.info("Attempting to create snapshot from Arlo Cloud URL")
                     try:
                         snapshot_url = await self.getSnapshotUrl()
-                        self.logger.debug(f"Got snapshot URL: {snapshot_url}")
-                        buf = await self.getBuffer(snapshot_url, is_url=True)
-                        self.logger.debug("Successfully got buffer from Arlo Cloud URL")
-                        return await self.createSnapshotFromBuffer(buf)
+                        if snapshot_url:
+                            self.logger.debug(f"Got snapshot URL: {snapshot_url}")
+                            buf = await self.getBuffer(snapshot_url, is_url=True)
+                            self.logger.debug("Successfully got buffer from Arlo Cloud URL")
+                            return await self.createSnapshotFromBuffer(buf)
                     except Exception as e:
-                        self.logger.error(f"Failed to get snapshot from Arlo Cloud URL: {e}")
+                        self.logger.error(f"Failed to create snapshot from Arlo Cloud URL: {e}")
                         self.logger.debug(e, exc_info=True)
                         buf = await self.snapshotErrorCall()
                         return await self.createSnapshotFromBuffer(buf)
@@ -640,9 +641,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     self.logger.info("Retrieving snapshot from cache")
                     return self.last_snapshot
         finally:
+            self.logger.debug("Released snapshot lock")
             if self.snapshot_lock.locked():
                 self.snapshot_lock.release()
-                self.logger.debug("Released snapshot lock")
 
     @async_print_exception_guard
     async def getScryptedDeviceAndPrebufferId(self):
@@ -687,7 +688,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     async def snapshotErrorCall(self) -> MediaObject:
         self.logger.debug("Getting buffer from Arlo Cloud Stream")
 
-        url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+        try:
+            url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+        except Exception as e:
+            self.logger.error(f"Failed to get Arlo Cloud URL to start stream: {e}")
 
         ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
         ffmpeg_args = [
@@ -707,13 +711,20 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
         snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
 
-        snapshot_ffmpeg_subprocess.start()
+        try:
+            snapshot_ffmpeg_subprocess.start()
+        except Exception as e:
+            self.logger.error(f"Failed to start FFmpeg: {e}")
+
         self.logger.debug("Started ffmpeg subprocess")
 
         await asyncio.sleep(5)
 
-        buf = snapshot_ffmpeg_subprocess.buffer()
-        self.logger.debug("Got buffer from ffmpeg subprocess")
+        try:
+            buf = snapshot_ffmpeg_subprocess.buffer()
+            self.logger.debug("Got buffer from ffmpeg subprocess")
+        except Exception as e:
+            self.logger.error(f"Buffer is empty after FFmpeg subprocess: {e}")
 
         snapshot_ffmpeg_subprocess.stop()
         self.logger.debug("Stopped ffmpeg subprocess")
@@ -729,14 +740,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         except Exception as e:
             self.logger.error(f"Failed to get snapshot URL: {e}")
             self.logger.debug(e, exc_info=True)
-            return None
 
     @async_print_exception_guard
     async def startRTCSignalingSession(self, scrypted_session):
-        if self.arlo_properties.get('sipCallActive', False) is not False and self.arlo_properties['sipCallActive'] != False:
-            self.logger.info(f"Camera is busy, not starting stream: sipCallActive {self.arlo_properties.get('sipCallActive')}")
-            return None
-
         self.logger.debug("Entered startRTCSignalingSession")
 
         plugin_session = ArloCameraRTCSignalingSession(self)
@@ -941,10 +947,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @async_print_exception_guard
     async def getVideoStream(self, options: RequestMediaStreamOptions = {}) -> MediaObject:
-        if self.arlo_properties['activityState'] != "idle":
-            self.logger.info(f"Camera is busy, not starting stream: activityState {self.arlo_properties['activityState']}")
-            return None
-
         self.logger.debug("Entered getVideoStream")
 
         mso = await self.getVideoStreamOptions(id=options.get("id", "default"))
