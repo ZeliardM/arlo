@@ -631,12 +631,12 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                             self.logger.debug(f"Got snapshot URL: {snapshot_url}")
                             buf = await self.getBuffer(snapshot_url, is_url=True)
                             self.logger.debug("Successfully got buffer from Arlo Cloud URL")
-                            return await self.createSnapshotFromBuffer(buf)
+                        else:
+                            buf = await self.getBuffer(None)
+                        return await self.createSnapshotFromBuffer(buf)
                     except Exception as e:
                         self.logger.error(f"Failed to create snapshot from Arlo Cloud URL: {e}")
                         self.logger.debug(e, exc_info=True)
-                        buf = await self.snapshotErrorCall()
-                        return await self.createSnapshotFromBuffer(buf)
                 else:
                     self.logger.info("Retrieving snapshot from cache")
                     return self.last_snapshot
@@ -656,21 +656,65 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     async def getBuffer(self, source, is_url=False):
         if isinstance(source, tuple):
             self.logger.debug("Getting buffer from Scrypted Prebuffer")
-        elif is_url:
-            self.logger.debug("Getting buffer from Arlo Cloud URL")
 
-        if isinstance(source, tuple):
             scrypted_device, prebuffer_id = source
             return await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
         elif is_url:
+            self.logger.debug("Getting buffer from Arlo Cloud URL")
+
             async with async_timeout(self.timeout):
                 async with aiohttp.ClientSession() as session:
                     async with session.get(source) as resp:
                         if resp.status != 200:
                             self.logger.error(f"Unexpected status downloading snapshot image: {resp.status}")
-                            return await self.snapshotErrorCall()
+                            return await self.getBuffer(None)
                         else:
                             return await resp.read()
+        else:
+            self.logger.debug("Getting buffer from Arlo Cloud Stream")
+
+            try:
+                url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+            except Exception as e:
+                self.logger.error(f"Failed to get Arlo Cloud URL to start stream: {e}")
+
+            ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
+            ffmpeg_args = [
+                "-hide_banner",
+                "-err_detect", "aggressive",
+                "-fflags", "discardcorrupt",
+                "-y",
+                "-analyzeduration", "0",
+                "-probesize", "500000",
+                "-reorder_queue_size", "0",
+                "-rtsp_transport", "tcp",
+                "-i", url,
+                "-f", "image2",
+                "-frames:v", "1",
+                "-",
+            ]
+            self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
+            snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
+
+            try:
+                snapshot_ffmpeg_subprocess.start()
+            except Exception as e:
+                self.logger.error(f"Failed to start FFmpeg: {e}")
+
+            self.logger.debug("Started ffmpeg subprocess")
+
+            await asyncio.sleep(5)
+
+            try:
+                buf = snapshot_ffmpeg_subprocess.buffer()
+                self.logger.debug("Got buffer from ffmpeg subprocess")
+            except Exception as e:
+                self.logger.error(f"Buffer is empty after FFmpeg subprocess: {e}")
+
+            snapshot_ffmpeg_subprocess.stop()
+            self.logger.debug("Stopped ffmpeg subprocess")
+
+            return buf
 
     @async_print_exception_guard
     async def createSnapshotFromBuffer(self, buf) -> MediaObject:
@@ -683,53 +727,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     def isTimeForNewSnapshot(self):
         self.logger.debug("Checking if it's time for a new snapshot")
         return self.snapshot_throttle_interval == 0 or (self.snapshot_throttle_interval > 0 and datetime.now() - self.last_snapshot_time >= timedelta(minutes=self.snapshot_throttle_interval))
-
-    @async_print_exception_guard
-    async def snapshotErrorCall(self) -> MediaObject:
-        self.logger.debug("Getting buffer from Arlo Cloud Stream")
-
-        try:
-            url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
-        except Exception as e:
-            self.logger.error(f"Failed to get Arlo Cloud URL to start stream: {e}")
-
-        ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
-        ffmpeg_args = [
-            "-hide_banner",
-            "-err_detect", "aggressive",
-            "-fflags", "discardcorrupt",
-            "-y",
-            "-analyzeduration", "0",
-            "-probesize", "500000",
-            "-reorder_queue_size", "0",
-            "-rtsp_transport", "tcp",
-            "-i", url,
-            "-f", "image2",
-            "-frames:v", "1",
-            "-",
-        ]
-        self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
-        snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
-
-        try:
-            snapshot_ffmpeg_subprocess.start()
-        except Exception as e:
-            self.logger.error(f"Failed to start FFmpeg: {e}")
-
-        self.logger.debug("Started ffmpeg subprocess")
-
-        await asyncio.sleep(5)
-
-        try:
-            buf = snapshot_ffmpeg_subprocess.buffer()
-            self.logger.debug("Got buffer from ffmpeg subprocess")
-        except Exception as e:
-            self.logger.error(f"Buffer is empty after FFmpeg subprocess: {e}")
-
-        snapshot_ffmpeg_subprocess.stop()
-        self.logger.debug("Stopped ffmpeg subprocess")
-
-        return buf
 
     @async_print_exception_guard
     async def getSnapshotUrl(self):
