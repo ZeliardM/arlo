@@ -1,108 +1,128 @@
-import multiprocessing
-import subprocess
-import time
-import threading
+import asyncio
 
 import scrypted_arlo_go
 
-
 HEARTBEAT_INTERVAL = 5
 
+async def sync_logger_send(logger, message):
+    # Convert the synchronous logger send function to an async one
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, logger.Send, message)
 
-def multiprocess_main(name, logger_port, child_conn, exe, args, queue=None, binary_output=False):
+async def multiprocess_main(name, logger_port, parent_to_child_queue, child_to_parent_queue, exe, args, parent_instance, queue=None, binary_output=False):
     logger = scrypted_arlo_go.NewTCPLogger(logger_port, "HeartbeatChildProcess")
+    await sync_logger_send(logger, f"{name} starting\n")
 
-    logger.Send(f"{name} starting\n")
-    sp = subprocess.Popen([exe, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            exe, *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE)
+        parent_instance.process = process
+    except Exception as e:
+        await sync_logger_send(logger, f"Failed to start subprocess: {e}")
+        return
 
-    # pull stdout and stderr from the subprocess and forward it over to
-    # our tcp logger
-    def logging_thread(stdstream, is_stderr):
+    async def logging_thread(stdstream, is_stderr):
         while True:
-            line = stdstream.readline()
+            line = await stdstream.readline()
             if not line:
                 break
             if binary_output and not is_stderr:
-                queue.put(line)  # push the binary output to the queue
+                await queue.put(line)
             else:
-                line = str(line, 'utf-8')
-                logger.Send(line)
-    stdout_t = threading.Thread(target=logging_thread, args=(sp.stdout, False))
-    stderr_t = threading.Thread(target=logging_thread, args=(sp.stderr, True))
-    stdout_t.start()
-    stderr_t.start()
+                line = line.decode('utf-8')
+                await sync_logger_send(logger, line)
+
+    await asyncio.gather(
+        logging_thread(process.stdout, False),
+        logging_thread(process.stderr, True))
 
     while True:
-        has_data = child_conn.poll(HEARTBEAT_INTERVAL * 3)
-        if not has_data:
+        try:
+            keep_alive = await asyncio.wait_for(parent_to_child_queue.get(), timeout=HEARTBEAT_INTERVAL * 3)
+        except asyncio.TimeoutError:
             break
 
-        # check if the subprocess is still alive, if not then exit
-        if sp.poll() is not None:
+        if process.returncode is not None:
             break
 
-        keep_alive = child_conn.recv()
         if not keep_alive:
             break
 
-    logger.Send(f"{name} exiting\n")
+    await sync_logger_send(logger, f"{name} exiting\n")
 
-    sp.terminate()
-    sp.wait()
+    if process.returncode is None:
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
 
-    stdout_t.join()
-    stderr_t.join()
-
-    logger.Send(f"{name} exited\n")
-    logger.Close()
-
+    await sync_logger_send(logger, f"{name} exited\n")
 
 class HeartbeatChildProcess:
-    """Class to manage running a child process that gets cleaned up if the parent exits.
-
-    When spawining subprocesses in Python, if the parent is forcibly killed (as is the case
-    when Scrypted restarts plugins), subprocesses get orphaned. This approach uses parent-child
-    heartbeats for the child to ensure that the parent process is still alive, and to cleanly
-    exit the child if the parent has terminated.
-    """
+    """Class to manage running a child process that gets cleaned up if the parent exits."""
 
     def __init__(self, name, logger_port, exe, binary_output=False, *args):
         self.name = name
         self.logger_port = logger_port
         self.exe = exe
         self.args = args
+        self.binary_output = binary_output
+        self.output = []
 
-        self.parent_conn, self.child_conn = multiprocessing.Pipe()
-        if binary_output:
-            self.queue = multiprocessing.Queue()
-            self.binary_output = binary_output
-            self.output = []
-            self.process = multiprocessing.Process(target=multiprocess_main, args=(name, logger_port, self.child_conn, exe, args, self.queue, binary_output))
-        else:
-            self.process = multiprocessing.Process(target=multiprocess_main, args=(name, logger_port, self.child_conn, exe, args))
-        self.process.daemon = True
+        self.loop = asyncio.get_event_loop()
+        self.parent_to_child_queue = asyncio.Queue()
+        self.child_to_parent_queue = asyncio.Queue()
+        self.queue = asyncio.Queue() if binary_output else None
+        self.process_task = self.loop.create_task(multiprocess_main(name, logger_port, self.parent_to_child_queue, self.child_to_parent_queue, exe, args, self, self.queue, binary_output))
+
         self._stop = False
+        self.process = None
 
-        self.thread = threading.Thread(target=self.heartbeat)
+    async def start(self):
+        if self.process_task.done():
+            # Restart the process if it has already completed
+            self.process_task = self.loop.create_task(multiprocess_main(self.name, self.logger_port, self.parent_to_child_queue, self.child_to_parent_queue, self.exe, self.args, self, self.queue, self.binary_output))
 
-    def start(self):
-        self.process.start()
-        self.thread.start()
-
-    def stop(self):
+    async def stop(self):
         self._stop = True
-        self.parent_conn.send(False)
-
-    def heartbeat(self):
-        while not self._stop:
-            time.sleep(HEARTBEAT_INTERVAL)
-            if not self.process.is_alive():
-                self.stop()
-                break
-            self.parent_conn.send(True)
-
-    def buffer(self):
+        await self.parent_to_child_queue.put(False)
+        if self.process and self.process.returncode is None:
+            self.process.terminate()
+            try:
+                await asyncio.wait_for(self.process.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                self.process.kill()
+                await self.process.wait()
+        if self.process_task and not self.process_task.done():
+            self.process_task.cancel()
+            try:
+                await self.process_task
+            except asyncio.CancelledError:
+                pass
+        while not self.parent_to_child_queue.empty():
+            await self.parent_to_child_queue.get()
         if self.binary_output:
-            while not self.queue.empty():  # retrieve the output from the queue
-                self.output.append(self.queue.get())
+            while not self.queue.empty():
+                await self.queue.get()
+
+    async def heartbeat(self):
+        while not self._stop:
+            await asyncio.sleep(HEARTBEAT_INTERVAL)
+            if self.process_task.done():
+                await self.stop()
+                break
+            await self.parent_to_child_queue.put(True)
+
+    async def buffer(self):
+        if self.binary_output:
+            try:
+                while True:
+                    buf = await asyncio.wait_for(self.queue.get(), timeout=5)
+                    self.output.append(buf)
+            except asyncio.TimeoutError:
+                pass
             return b''.join(self.output)
