@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import aiohttp
 from async_timeout import timeout as async_timeout
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import io
 import json
@@ -678,60 +679,58 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                             return await resp.read()
         else:
             self.logger.debug("Getting buffer from Arlo Cloud Stream")
+            attempt = 0
+            buf = None
+            loop = asyncio.get_running_loop()
 
-            try:
-                url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
-            except asyncio.CancelledError:
-                self.logger.error("Getting the Arlo Cloud URL was cancelled")
-            except asyncio.TimeoutError:
-                self.logger.error("Getting the Arlo Cloud URL timed out")
-            except Exception as e:
-                self.logger.error(f"Failed to get Arlo Cloud URL to start stream: {e}")
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                while attempt < 3:
+                    try:
+                        url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+                        if not url:
+                            raise ValueError("No URL received from Arlo Cloud")
 
-            ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
-            ffmpeg_args = [
-                "-hide_banner",
-                "-err_detect", "aggressive",
-                "-fflags", "discardcorrupt",
-                "-y",
-                "-analyzeduration", "0",
-                "-probesize", "500000",
-                "-reorder_queue_size", "0",
-                "-rtsp_transport", "tcp",
-                "-i", url,
-                "-f", "image2",
-                "-frames:v", "1",
-                "-",
-            ]
-            self.logger.debug(f"Starting ffmpeg subprocess at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
-            snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
+                        ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
+                        ffmpeg_args = [
+                            "-hide_banner",
+                            "-fflags", "discardcorrupt",
+                            "-y",
+                            "-analyzeduration", "10000000",
+                            "-probesize", "10000000",
+                            "-reorder_queue_size", "0",
+                            "-rtsp_transport", "tcp",
+                            "-i", url,
+                            "-f", "image2",
+                            "-frames:v", "1",
+                            "-loglevel", "verbose",
+                            "-",
+                        ]
 
-            try:
-                snapshot_ffmpeg_subprocess.start()
-            except asyncio.CancelledError:
-                self.logger.error("Starting ffmpeg subprocess was cancelled")
-            except asyncio.TimeoutError:
-                self.logger.error("Starting ffmpeg subprocess timed out")
-            except Exception as e:
-                self.logger.error(f"Failed to start ffmpeg subprocess: {e}")
+                        self.logger.debug(f"Starting ffmpeg subprocess at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
+                        snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
 
-            self.logger.debug("Started ffmpeg subprocess")
+                        await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.start)
+                        self.logger.debug("Started ffmpeg subprocess")
 
-            await asyncio.sleep(5)
+                        await asyncio.sleep(5)
 
-            try:
-                buf = snapshot_ffmpeg_subprocess.buffer()
-                self.logger.debug("Got buffer from ffmpeg subprocess")
-            except asyncio.CancelledError:
-                self.logger.error("Get buffer from ffmpeg subprocess was cancelled")
-            except asyncio.TimeoutError:
-                self.logger.error("Get buffer from ffmpeg subprocess timed out")
-            except Exception as e:
-                self.logger.error(f"Failed to get buffer from ffmpeg subprocess: {e}")
+                        buf = await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.buffer)
+                        if not buf:
+                            raise ValueError("No buffer received from ffmpeg subprocess")
+                        self.logger.debug("Got buffer from ffmpeg subprocess")
+                        break
+                    except (asyncio.CancelledError, asyncio.TimeoutError, ValueError) as e:
+                        self.logger.error(f"Attempt {attempt + 1}/3: {str(e)}")
+                        attempt += 1
+                        if attempt >= 3:
+                            raise Exception("Failed to get buffer from ffmpeg subprocess after maximum retries")
+                        self.logger.debug(f"Retrying...")
+                    finally:
+                        await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.stop)
+                        self.logger.debug("Stopped ffmpeg subprocess")
 
-            snapshot_ffmpeg_subprocess.stop()
-            self.logger.debug("Stopped ffmpeg subprocess")
-
+            if buf is None or len(buf) == 0:
+                raise Exception("Failed to get buffer from ffmpeg subprocess")
             return buf
 
     @async_print_exception_guard
