@@ -619,6 +619,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                         buf = await self.getBuffer((scrypted_device, prebuffer_id))
                         self.logger.debug("Successfully got buffer from Scrypted Prebuffer")
                         return await self.createSnapshotFromBuffer(buf)
+                    except asyncio.CancelledError:
+                        self.logger.error("Create snapshot from Scrypted Prebuffer was cancelled")
+                    except asyncio.TimeoutError:
+                        self.logger.error("Create snapshot from Scrypted Prebuffer timed out")
                     except Exception as e:
                         self.logger.warning(f"Failed to create snapshot from Scrypted Prebuffer: {e}")
                         self.logger.debug(e, exc_info=True)
@@ -634,6 +638,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                         else:
                             buf = await self.getBuffer(None)
                         return await self.createSnapshotFromBuffer(buf)
+                    except asyncio.CancelledError:
+                        self.logger.error("Create snapshot from Arlo Cloud URL was cancelled")
+                    except asyncio.TimeoutError:
+                        self.logger.error("Create snapshot from Arlo Cloud URL timed out")
                     except Exception as e:
                         self.logger.error(f"Failed to create snapshot from Arlo Cloud URL: {e}")
                         self.logger.debug(e, exc_info=True)
@@ -642,8 +650,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     return self.last_snapshot
         finally:
             self.logger.debug("Released snapshot lock")
-            if self.snapshot_lock.locked():
-                self.snapshot_lock.release()
 
     @async_print_exception_guard
     async def getScryptedDeviceAndPrebufferId(self):
@@ -675,6 +681,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
             try:
                 url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+            except asyncio.CancelledError:
+                self.logger.error("Getting the Arlo Cloud URL was cancelled")
+            except asyncio.TimeoutError:
+                self.logger.error("Getting the Arlo Cloud URL timed out")
             except Exception as e:
                 self.logger.error(f"Failed to get Arlo Cloud URL to start stream: {e}")
 
@@ -693,13 +703,17 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 "-frames:v", "1",
                 "-",
             ]
-            self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
+            self.logger.debug(f"Starting ffmpeg subprocess at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
             snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
 
             try:
                 snapshot_ffmpeg_subprocess.start()
+            except asyncio.CancelledError:
+                self.logger.error("Starting ffmpeg subprocess was cancelled")
+            except asyncio.TimeoutError:
+                self.logger.error("Starting ffmpeg subprocess timed out")
             except Exception as e:
-                self.logger.error(f"Failed to start FFmpeg: {e}")
+                self.logger.error(f"Failed to start ffmpeg subprocess: {e}")
 
             self.logger.debug("Started ffmpeg subprocess")
 
@@ -708,8 +722,12 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             try:
                 buf = snapshot_ffmpeg_subprocess.buffer()
                 self.logger.debug("Got buffer from ffmpeg subprocess")
+            except asyncio.CancelledError:
+                self.logger.error("Get buffer from ffmpeg subprocess was cancelled")
+            except asyncio.TimeoutError:
+                self.logger.error("Get buffer from ffmpeg subprocess timed out")
             except Exception as e:
-                self.logger.error(f"Buffer is empty after FFmpeg subprocess: {e}")
+                self.logger.error(f"Failed to get buffer from ffmpeg subprocess: {e}")
 
             snapshot_ffmpeg_subprocess.stop()
             self.logger.debug("Stopped ffmpeg subprocess")
@@ -734,6 +752,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.logger.debug("Getting snapshot URL")
             snapshot_url = await asyncio.wait_for(self.provider.arlo.TriggerFullFrameSnapshot(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
             return snapshot_url
+        except asyncio.CancelledError:
+            self.logger.error("Getting snapshot URL was cancelled")
+        except asyncio.TimeoutError:
+            self.logger.error("Getting snapshot URL timed out")
         except Exception as e:
             self.logger.error(f"Failed to get snapshot URL: {e}")
             self.logger.debug(e, exc_info=True)
