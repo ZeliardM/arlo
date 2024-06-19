@@ -681,51 +681,56 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.logger.debug("Getting buffer from Arlo Cloud Stream")
             attempt = 0
             buf = None
+            loop = asyncio.get_running_loop()
 
-            while attempt < 3:
-                try:
-                    url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
-                    if not url:
-                        raise ValueError("No URL received from Arlo Cloud")
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                while attempt < 3:
+                    try:
+                        url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+                        if not url:
+                            raise ValueError("No URL received from Arlo Cloud")
 
-                    ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
-                    ffmpeg_args = [
-                        "-hide_banner",
-                        "-fflags", "discardcorrupt",
-                        "-y",
-                        "-analyzeduration", "0",
-                        "-probesize", "5000000",
-                        "-reorder_queue_size", "0",
-                        "-rtsp_transport", "tcp",
-                        "-i", url,
-                        "-f", "image2",
-                        "-frames:v", "1",
-                        "-loglevel", "verbose",
-                        "-",
-                    ]
+                        ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
+                        ffmpeg_args = [
+                            "-hide_banner",
+                            "-fflags", "discardcorrupt",
+                            "-y",
+                            "-analyzeduration", "10000000",
+                            "-probesize", "10000000",
+                            "-reorder_queue_size", "0",
+                            "-rtsp_transport", "tcp",
+                            "-i", url,
+                            "-f", "image2",
+                            "-frames:v", "1",
+                            "-loglevel", "verbose",
+                            "-",
+                        ]
 
-                    self.logger.debug(f"Starting ffmpeg subprocess at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
-                    snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
+                        self.logger.debug(f"Starting ffmpeg subprocess at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
+                        snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
 
-                    await snapshot_ffmpeg_subprocess.start()
-                    self.logger.debug("Started ffmpeg subprocess")
+                        await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.start)
+                        self.logger.debug("Started ffmpeg subprocess")
 
-                    buf = await snapshot_ffmpeg_subprocess.buffer()
-                    if not buf:
-                        raise ValueError("No buffer received from ffmpeg subprocess")
-                    self.logger.debug("Got buffer from ffmpeg subprocess")
-                    break
-                except (asyncio.CancelledError, asyncio.TimeoutError, ValueError) as e:
-                    self.logger.error(f"Attempt {attempt + 1}/3: {str(e)}, Retrying...")
-                    attempt += 1
-                    if attempt >= 3:
-                        raise Exception("Failed to get buffer from ffmpeg subprocess after maximum retries")
-                finally:
-                    await snapshot_ffmpeg_subprocess.stop()
-                    self.logger.debug("Stopped ffmpeg subprocess")
+                        await asyncio.sleep(5)
+
+                        buf = await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.buffer)
+                        if not buf:
+                            raise ValueError("No buffer received from ffmpeg subprocess")
+                        self.logger.debug("Got buffer from ffmpeg subprocess")
+                        break
+                    except (asyncio.CancelledError, asyncio.TimeoutError, ValueError) as e:
+                        self.logger.error(f"Attempt {attempt + 1}/3: {str(e)}")
+                        attempt += 1
+                        if attempt >= 3:
+                            raise Exception("Failed to get buffer from ffmpeg subprocess after maximum retries")
+                        self.logger.debug(f"Retrying...")
+                    finally:
+                        await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.stop)
+                        self.logger.debug("Stopped ffmpeg subprocess")
 
             if buf is None or len(buf) == 0:
-                raise Exception("Failed to get buffer")
+                raise Exception("Failed to get buffer from ffmpeg subprocess")
             return buf
 
     @async_print_exception_guard
@@ -1259,7 +1264,7 @@ class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):
         self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
 
         self.intercom_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.camera.info_logger.logger_server_port, ffmpeg_path, *ffmpeg_args)
-        await self.intercom_ffmpeg_subprocess.start()
+        self.intercom_ffmpeg_subprocess.start()
 
         self.sdp_answered = False
 
@@ -1303,7 +1308,7 @@ class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):
     @async_print_exception_guard
     async def shutdown(self) -> None:
         if self.intercom_ffmpeg_subprocess is not None:
-            await self.intercom_ffmpeg_subprocess.stop()
+            self.intercom_ffmpeg_subprocess.stop()
             self.intercom_ffmpeg_subprocess = None
         if self.arlo_pc is not None:
             self.arlo_pc.Close()
@@ -1387,7 +1392,7 @@ class ArloCameraSIPIntercomSession(ArloCameraIntercomSession):
         self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
 
         self.intercom_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.camera.info_logger.logger_server_port, ffmpeg_path, *ffmpeg_args)
-        await self.intercom_ffmpeg_subprocess.start()
+        self.intercom_ffmpeg_subprocess.start()
 
         def sip_start():
             try:
@@ -1402,7 +1407,7 @@ class ArloCameraSIPIntercomSession(ArloCameraIntercomSession):
     @async_print_exception_guard
     async def shutdown(self) -> None:
         if self.intercom_ffmpeg_subprocess is not None:
-            await self.intercom_ffmpeg_subprocess.stop()
+            self.intercom_ffmpeg_subprocess.stop()
             self.intercom_ffmpeg_subprocess = None
         if self.arlo_sip is not None:
             self.arlo_sip.Close()
