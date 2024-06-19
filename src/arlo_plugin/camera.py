@@ -720,8 +720,8 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                         self.logger.debug("Got buffer from ffmpeg subprocess")
                         break
                     except (asyncio.CancelledError, asyncio.TimeoutError, ValueError) as e:
-                        self.logger.error(f"Attempt {attempt + 1}/3: {str(e)}")
                         attempt += 1
+                        self.logger.error(f"Attempt {attempt}/3: {str(e)}")
                         if attempt >= 3:
                             raise Exception("Failed to get buffer from ffmpeg subprocess after maximum retries")
                         self.logger.debug(f"Retrying...")
