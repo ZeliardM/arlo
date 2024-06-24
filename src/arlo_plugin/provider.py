@@ -515,9 +515,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             # continue by sleeping/waiting for a signal
             interval = self.imap_mfa_interval * 24 * 60 * 60  # convert interval days to seconds
             signal_task = asyncio.create_task(imap_signal.get())
+            sleep_task = asyncio.create_task(asyncio.sleep(interval))
 
             # wait until either we receive a signal or the refresh interval expires
-            done, pending = await asyncio.wait([signal_task, asyncio.sleep(interval)], return_when=asyncio.FIRST_COMPLETED)
+            done, pending = await asyncio.wait([signal_task, sleep_task], return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
                 task.cancel()
 

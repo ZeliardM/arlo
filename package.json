@@ -26,7 +26,10 @@
       "name": "Arlo Camera Plugin",
       "runtime": "python",
       "pythonVersion": {
-         "default": "3.10"
+         "default": "3.12",
+         "win32": {
+            "x64": "3.10"
+         }
       },
       "type": "DeviceProvider",
       "interfaces": [
