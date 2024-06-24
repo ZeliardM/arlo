@@ -612,14 +612,17 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         try:
             async with self.snapshot_lock:
                 self.logger.debug("Acquired snapshot lock")
-                scrypted_device, prebuffer_id = await self.getScryptedDeviceAndPrebufferId()
+                try:
+                    scrypted_device, prebuffer_id = await asyncio.wait_for(self.getScryptedDeviceAndPrebufferId(), timeout=self.timeout)
+                except asyncio.TimeoutError:
+                    self.logger.error("Failed to get Scrypted Device and Prebuffer ID")
 
                 if scrypted_device and prebuffer_id is not None:
                     self.logger.info("Attempting to create snapshot from Scrypted Prebuffer")
                     try:
-                        buf = await self.getBuffer((scrypted_device, prebuffer_id))
+                        buf = await asyncio.wait_for(self.getBuffer((scrypted_device, prebuffer_id)), timeout=self.timeout)
                         self.logger.debug("Successfully got buffer from Scrypted Prebuffer")
-                        return await self.createSnapshotFromBuffer(buf)
+                        return await asyncio.wait_for(self.createSnapshotFromBuffer(buf), timeout=self.timeout)
                     except asyncio.CancelledError:
                         self.logger.error("Create snapshot from Scrypted Prebuffer was cancelled")
                     except asyncio.TimeoutError:
@@ -631,13 +634,13 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 if self.isTimeForNewSnapshot():
                     self.logger.info("Attempting to create snapshot from Arlo Cloud URL")
                     try:
-                        snapshot_url = await self.getSnapshotUrl()
+                        snapshot_url = await asyncio.wait_for(self.getSnapshotUrl(), timeout=self.timeout)
                         if snapshot_url:
                             self.logger.debug(f"Got snapshot URL: {snapshot_url}")
-                            buf = await self.getBuffer(snapshot_url, is_url=True)
+                            buf = await asyncio.wait_for(self.getBuffer(snapshot_url, is_url=True), timeout=self.timeout)
                             self.logger.debug("Successfully got buffer from Arlo Cloud URL")
                         else:
-                            buf = await self.getBuffer(None)
+                            buf = await asyncio.wait_for(self.getBuffer(None), timeout=self.timeout)
                         return await self.createSnapshotFromBuffer(buf)
                     except asyncio.CancelledError:
                         self.logger.error("Create snapshot from Arlo Cloud URL was cancelled")
@@ -654,10 +657,14 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @async_print_exception_guard
     async def getScryptedDeviceAndPrebufferId(self):
-        scrypted_device = scrypted_sdk.systemManager.getDeviceById(self.getScryptedProperty("id"))
-        msos = await scrypted_device.getVideoStreamOptions()
-        prebuffer_id = next((m['id'] for m in msos if 'prebuffer' in m), None)
-        return scrypted_device, prebuffer_id
+        try:
+            scrypted_device = scrypted_sdk.systemManager.getDeviceById(self.getScryptedProperty("id"))
+            msos = await asyncio.wait_for(scrypted_device.getVideoStreamOptions(), timeout=self.timeout)
+            prebuffer_id = next((m['id'] for m in msos if 'prebuffer' in m), None)
+            return scrypted_device, prebuffer_id
+        except asyncio.TimeoutError:
+            self.logger.error("Failed to get Scrypted Device and Prebuffer ID")
+            return None, None
 
     @async_print_exception_guard
     async def getBuffer(self, source, is_url=False):
@@ -665,7 +672,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.logger.debug("Getting buffer from Scrypted Prebuffer")
 
             scrypted_device, prebuffer_id = source
-            return await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg")
+            try:
+                return await asyncio.wait_for(scrypted_sdk.mediaManager.convertMediaObjectToBuffer(await scrypted_device.getVideoStream({"id": f"{prebuffer_id}", "refresh": False}), "image/jpeg"), timeout=self.timeout)
+            except asyncio.TimeoutError:
+                self.logger.error("Getting buffer from Scrypted Prebuffer timed out")
         elif is_url:
             self.logger.debug("Getting buffer from Arlo Cloud URL")
 
@@ -674,72 +684,71 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     async with session.get(source) as resp:
                         if resp.status != 200:
                             self.logger.error(f"Unexpected status downloading snapshot image: {resp.status}")
-                            return await self.getBuffer(None)
+                            try:
+                                return await asyncio.wait_for(self.getBuffer(None), timeout=self.timeout)
+                            except asyncio.TimeoutError:
+                                self.logger.error("Getting buffer from Arlo Cloud Stream timed out")
                         else:
-                            return await resp.read()
+                            try:
+                                return await asyncio.wait_for(resp.read(), timeout=self.timeout)
+                            except asyncio.TimeoutError:
+                                self.logger.error("Getting buffer from Arlo Cloud URL timed out")
         else:
             self.logger.debug("Getting buffer from Arlo Cloud Stream")
             attempt = 0
             buf = None
-            loop = asyncio.get_running_loop()
 
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                while attempt < 3:
-                    try:
-                        url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
-                        if not url:
-                            raise ValueError("No URL received from Arlo Cloud")
+            while attempt < 3:
+                try:
+                    url = await asyncio.wait_for(self.provider.arlo.StartStream(self.arlo_basestation, self.arlo_device), timeout=self.timeout)
+                    if not url:
+                        raise ValueError("No URL received from Arlo Cloud")
 
-                        ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
-                        ffmpeg_args = [
-                            "-hide_banner",
-                            "-fflags", "discardcorrupt",
-                            "-y",
-                            "-analyzeduration", "10000000",
-                            "-probesize", "10000000",
-                            "-reorder_queue_size", "0",
-                            "-rtsp_transport", "tcp",
-                            "-i", url,
-                            "-f", "image2",
-                            "-frames:v", "1",
-                            "-loglevel", "verbose",
-                            "-",
-                        ]
+                    ffmpeg_path = await asyncio.wait_for(scrypted_sdk.mediaManager.getFFmpegPath(), timeout=self.timeout)
+                    ffmpeg_args = [
+                        "-hide_banner",
+                        "-fflags", "discardcorrupt",
+                        "-y",
+                        "-analyzeduration", "10000000",
+                        "-probesize", "10000000",
+                        "-reorder_queue_size", "0",
+                        "-rtsp_transport", "tcp",
+                        "-i", url,
+                        "-f", "image2",
+                        "-frames:v", "1",
+                        "-loglevel", "verbose",
+                        "-",
+                    ]
 
-                        self.logger.debug(f"Starting ffmpeg subprocess at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
-                        snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
+                    self.logger.debug(f"Starting FFmpeg subprocess at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
+                    snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
 
-                        await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.start)
-                        self.logger.debug("Started ffmpeg subprocess")
-
-                        await asyncio.sleep(5)
-
-                        buf = await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.buffer)
-                        if not buf:
-                            raise ValueError("No buffer received from ffmpeg subprocess")
-                        self.logger.debug("Got buffer from ffmpeg subprocess")
-                        break
-                    except (asyncio.CancelledError, asyncio.TimeoutError, ValueError) as e:
-                        attempt += 1
-                        self.logger.error(f"Attempt {attempt}/3: {str(e)}")
-                        if attempt >= 3:
-                            raise Exception("Failed to get buffer from ffmpeg subprocess after maximum retries")
-                        self.logger.debug(f"Retrying...")
-                    finally:
-                        await loop.run_in_executor(executor, snapshot_ffmpeg_subprocess.stop)
-                        self.logger.debug("Stopped ffmpeg subprocess")
+                    buf = await asyncio.wait_for(snapshot_ffmpeg_subprocess.buffer(), timeout=self.timeout)
+                    if not buf:
+                        raise ValueError("No buffer received from Arlo Cloud Stream")
+                    self.logger.debug("Got buffer from Arlo Cloud Stream")
+                    break
+                except (asyncio.CancelledError, asyncio.TimeoutError, ValueError) as e:
+                    attempt += 1
+                    self.logger.error(f"Attempt {attempt}/3: {str(e)}")
+                    if attempt >= 3:
+                        raise Exception("Failed to get buffer from Arlo Cloud Stream after maximum retries")
+                    self.logger.debug("Retrying...")
 
             if buf is None or len(buf) == 0:
-                raise Exception("Failed to get buffer from ffmpeg subprocess")
+                raise Exception("Failed to get buffer from Arlo Cloud Stream")
             return buf
 
     @async_print_exception_guard
     async def createSnapshotFromBuffer(self, buf) -> MediaObject:
-        self.logger.debug("Creating snapshot from buffer")
-        self.last_snapshot = await scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg")
-        self.last_snapshot_time = datetime.now()
-        self.logger.debug("Successfully created snapshot from buffer")
-        return self.last_snapshot
+        try:
+            self.logger.debug("Creating snapshot from buffer")
+            self.last_snapshot = await asyncio.wait_for(scrypted_sdk.mediaManager.createMediaObject(buf, "image/jpeg"), timeout=self.timeout)
+            self.last_snapshot_time = datetime.now()
+            self.logger.debug("Successfully created snapshot from buffer")
+            return self.last_snapshot
+        except asyncio.TimeoutError:
+            self.logger.error("Creating snapshot from buffer timed out")
 
     def isTimeForNewSnapshot(self):
         self.logger.debug("Checking if it's time for a new snapshot")
@@ -1233,7 +1242,7 @@ class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):
         )
 
         ffmpeg_params = json.loads(await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(media, ScryptedMimeTypes.FFmpegInput.value))
-        self.logger.debug(f"Received ffmpeg params: {ffmpeg_params}")
+        self.logger.debug(f"Received FFmpeg params: {ffmpeg_params}")
         audio_port = self.arlo_pc.InitializeAudioRTPListener(scrypted_arlo_go.WebRTCMimeTypeOpus)
 
         ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
@@ -1261,10 +1270,10 @@ class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):
             "-flush_packets", "1",
             f"rtp://localhost:{audio_port}?pkt_size={scrypted_arlo_go.UDP_PACKET_SIZE()}",
         ]
-        self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
+        self.logger.debug(f"Starting FFmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
 
         self.intercom_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.camera.info_logger.logger_server_port, ffmpeg_path, *ffmpeg_args)
-        self.intercom_ffmpeg_subprocess.start()
+        await self.intercom_ffmpeg_subprocess.start()
 
         self.sdp_answered = False
 
@@ -1308,7 +1317,7 @@ class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):
     @async_print_exception_guard
     async def shutdown(self) -> None:
         if self.intercom_ffmpeg_subprocess is not None:
-            self.intercom_ffmpeg_subprocess.stop()
+            await self.intercom_ffmpeg_subprocess.stop()
             self.intercom_ffmpeg_subprocess = None
         if self.arlo_pc is not None:
             self.arlo_pc.Close()
@@ -1361,7 +1370,7 @@ class ArloCameraSIPIntercomSession(ArloCameraIntercomSession):
         )
 
         ffmpeg_params = json.loads(await scrypted_sdk.mediaManager.convertMediaObjectToBuffer(media, ScryptedMimeTypes.FFmpegInput.value))
-        self.logger.debug(f"Received ffmpeg params: {ffmpeg_params}")
+        self.logger.debug(f"Received FFmpeg params: {ffmpeg_params}")
         audio_port = self.arlo_sip.InitializeAudioRTPListener(scrypted_arlo_go.WebRTCMimeTypeOpus)
 
         ffmpeg_path = await scrypted_sdk.mediaManager.getFFmpegPath()
@@ -1389,10 +1398,10 @@ class ArloCameraSIPIntercomSession(ArloCameraIntercomSession):
             "-flush_packets", "1",
             f"rtp://localhost:{audio_port}?pkt_size={scrypted_arlo_go.UDP_PACKET_SIZE()}",
         ]
-        self.logger.debug(f"Starting ffmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
+        self.logger.debug(f"Starting FFmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
 
         self.intercom_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.camera.info_logger.logger_server_port, ffmpeg_path, *ffmpeg_args)
-        self.intercom_ffmpeg_subprocess.start()
+        await self.intercom_ffmpeg_subprocess.start()
 
         def sip_start():
             try:
@@ -1407,7 +1416,7 @@ class ArloCameraSIPIntercomSession(ArloCameraIntercomSession):
     @async_print_exception_guard
     async def shutdown(self) -> None:
         if self.intercom_ffmpeg_subprocess is not None:
-            self.intercom_ffmpeg_subprocess.stop()
+            await self.intercom_ffmpeg_subprocess.stop()
             self.intercom_ffmpeg_subprocess = None
         if self.arlo_sip is not None:
             self.arlo_sip.Close()
