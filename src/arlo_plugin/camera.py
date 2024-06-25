@@ -170,6 +170,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
         self.extra_verbose_logger = LoggerServer(self, extra_verbose)
 
+    async def delayed_init(self) -> None:
         self.start_error_subscription()
         self.start_motion_subscription()
         self.start_audio_subscription()
@@ -180,7 +181,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_activity_state_subscription()
         self.start_sip_call_active_subscription()
 
-    async def delayed_init(self) -> None:
         self.motionDetected = self.get_property("motionDetected")
         self.audioDetected = self.get_property("audioDetected")
         self.brightness = ArloCamera.ARLO_TO_SCRYPTED_BRIGHTNESS_MAP[self.get_property("brightness")]

@@ -16,7 +16,9 @@ class BackgroundTaskMixin:
 
         def print_exception(task):
             if task.exception():
-                self.logger.error(f"task exception: {task.exception()}i\n{traceback.format_tb(task.exception().__traceback__)}")
+                tb = traceback.format_tb(task.exception().__traceback__)
+                tb = "".join(tb)
+                self.logger.error(f"task exception: {task.exception()}\n{tb}")
 
         self.background_tasks.add(task)
         task.add_done_callback(print_exception)
