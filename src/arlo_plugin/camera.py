@@ -3,9 +3,7 @@ from __future__ import annotations
 import asyncio
 import aiohttp
 from async_timeout import timeout as async_timeout
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-import io
 import json
 import socket
 import time
@@ -1272,7 +1270,7 @@ class ArloCameraWebRTCIntercomSession(ArloCameraIntercomSession):
         ]
         self.logger.debug(f"Starting FFmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
 
-        self.intercom_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.camera.info_logger.logger_server_port, ffmpeg_path, *ffmpeg_args)
+        self.intercom_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.camera.info_logger.logger_server_port, ffmpeg_path, False, *ffmpeg_args)
         await self.intercom_ffmpeg_subprocess.start()
 
         self.sdp_answered = False
@@ -1400,7 +1398,7 @@ class ArloCameraSIPIntercomSession(ArloCameraIntercomSession):
         ]
         self.logger.debug(f"Starting FFmpeg at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
 
-        self.intercom_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.camera.info_logger.logger_server_port, ffmpeg_path, *ffmpeg_args)
+        self.intercom_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.camera.info_logger.logger_server_port, ffmpeg_path, False, *ffmpeg_args)
         await self.intercom_ffmpeg_subprocess.start()
 
         def sip_start():
