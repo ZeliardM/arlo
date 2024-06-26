@@ -750,6 +750,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     raise Exception("Failed to get buffer from Arlo Cloud Stream")
             except Exception as e:
                 self.logger.error(e)
+                buf = "Failed"
             return buf
 
     @async_print_exception_guard
