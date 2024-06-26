@@ -734,16 +734,22 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     self.logger.error(f"Attempt {attempt}/3: {str(e)}")
                     if snapshot_ffmpeg_subprocess:
                         await snapshot_ffmpeg_subprocess.stop()
-                    if attempt >= 3:
-                        raise Exception("Failed to get buffer from Arlo Cloud Stream after maximum retries")
-                    self.logger.debug("Retrying...")
+                    try:
+                        if attempt >= 3:
+                            raise Exception("Failed to get buffer from Arlo Cloud Stream after maximum retries")
+                        self.logger.debug("Retrying...")
+                    except Exception as e:
+                        self.logger.error(e)
                 finally:
                     if snapshot_ffmpeg_subprocess:
                         await snapshot_ffmpeg_subprocess.stop()
                     snapshot_ffmpeg_subprocess = None
 
-            if buf is None or len(buf) == 0:
-                raise Exception("Failed to get buffer from Arlo Cloud Stream")
+            try:
+                if buf is None or len(buf) == 0:
+                    raise Exception("Failed to get buffer from Arlo Cloud Stream")
+            except Exception as e:
+                self.logger.error(e)
             return buf
 
     @async_print_exception_guard

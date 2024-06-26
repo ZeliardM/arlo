@@ -166,5 +166,11 @@ class HeartbeatChildProcess:
                     except asyncio.CancelledError:
                         continue
                     continue
+                except ValueError as e:
+                    self.logger.Send(f"{self.name} error accessing the buffer queue: {e}\n")
+                    break
+                except Exception as e:
+                    self.logger.Send(f"{self.name} unknown buffer error: {e}\n")
+                    break
 
         return b''.join(self.buffer_output)
