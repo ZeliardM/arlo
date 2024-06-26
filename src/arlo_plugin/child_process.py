@@ -15,14 +15,15 @@ def multiprocess_main(name, logger_port, child_conn, exe, args, buffer_queue=Non
 
     logger.Send(f"{name} starting\n")
     sp = subprocess.Popen([exe, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stop_event = threading.Event()
 
     def logging_thread(stdstream, is_stderr):
-        while True:
+        while not stop_event.is_set():
             line = stdstream.readline()
             if not line:
                 break
             if binary_output and not is_stderr:
-                buffer_queue.put(line)
+                buffer_queue.put(line, block=True, timeout=HEARTBEAT_INTERVAL * 3)
             else:
                 line = str(line, 'utf-8')
                 logger.Send(line)
@@ -33,25 +34,30 @@ def multiprocess_main(name, logger_port, child_conn, exe, args, buffer_queue=Non
     stdout_t.start()
     stderr_t.start()
 
-    while True:
-        has_data = child_conn.poll(HEARTBEAT_INTERVAL * 3)
-        if not has_data:
-            break
-        if sp.poll() is not None:
-            break
-        keep_alive = child_conn.recv()
-        if not keep_alive:
-            break
+    try:
+        while True:
+            has_data = child_conn.poll(HEARTBEAT_INTERVAL * 3)
+            if not has_data:
+                break
+            if sp.poll() is not None:
+                break
+            keep_alive = child_conn.recv()
+            if not keep_alive:
+                break
+    finally:
+        logger.Send(f"{name} exiting\n")
+        sp.terminate()
+        try:
+            sp.wait(timeout=HEARTBEAT_INTERVAL)
+        except subprocess.TimeoutExpired:
+            sp.kill()
+        stop_event.set()
 
-    logger.Send(f"{name} exiting\n")
-    sp.terminate()
-    sp.wait()
+        stdout_t.join()
+        stderr_t.join()
 
-    stdout_t.join()
-    stderr_t.join()
-
-    logger.Send(f"{name} exited\n")
-    logger.Close()
+        logger.Send(f"{name} exited\n")
+        logger.Close()
 
 
 class HeartbeatChildProcess:
@@ -86,21 +92,27 @@ class HeartbeatChildProcess:
 
     async def stop(self):
         self._stop = True
-        self.parent_conn.send(False)
+        if self.process.is_alive():
+            self.parent_conn.send(False)
+            self.process.join()
+        self.parent_conn.close()
+        self.child_conn.close()
         if self.heartbeat_task:
             self.heartbeat_task.cancel()
-            try:
-                await self.heartbeat_task
-            except asyncio.CancelledError:
-                pass
+        if self.binary_output:
+            self.buffer_queue.close()
+            self.buffer_queue.join_thread()
 
     async def heartbeat(self):
-        while not self._stop:
-            await asyncio.sleep(HEARTBEAT_INTERVAL)
-            if not self.process.is_alive():
-                await self.stop()
-                break
-            self.parent_conn.send(True)
+        try:
+            while not self._stop:
+                await asyncio.sleep(HEARTBEAT_INTERVAL)
+                if not self.process.is_alive():
+                    await self.stop()
+                    break
+                self.parent_conn.send(True)
+        except asyncio.CancelledError:
+            pass
 
     async def buffer(self):
         if self.binary_output:
@@ -110,7 +122,7 @@ class HeartbeatChildProcess:
 
             while True:
                 try:
-                    binary_data = self.buffer_queue.get(timeout=1)
+                    binary_data = self.buffer_queue.get_nowait()
                     temp_buffer += binary_data
 
                     if not found_start:
@@ -126,7 +138,10 @@ class HeartbeatChildProcess:
                             self.buffer_output.append(frame)
                             break
                 except queue.Empty:
+                    try:
+                        await asyncio.sleep(0.1)
+                    except asyncio.CancelledError:
+                        continue
                     continue
 
-        await self.stop()
         return b''.join(self.buffer_output)

@@ -721,7 +721,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     self.logger.debug(f"Starting FFmpeg subprocess at {ffmpeg_path} with '{' '.join(ffmpeg_args)}'")
                     snapshot_ffmpeg_subprocess = HeartbeatChildProcess("FFmpeg", self.info_logger.logger_server_port, ffmpeg_path, True, *ffmpeg_args)
 
-                    buf = await asyncio.wait_for(snapshot_ffmpeg_subprocess.buffer(), timeout=self.timeout)
+                    try:
+                        buf = await asyncio.wait_for(snapshot_ffmpeg_subprocess.buffer(), timeout=self.timeout)
+                    except asyncio.TimeoutError:
+                        self.logger.error("Getting buffer from Arlo Cloud Stream timed out")
                     if not buf:
                         raise ValueError("No buffer received from Arlo Cloud Stream")
                     self.logger.debug("Got buffer from Arlo Cloud Stream")
@@ -729,9 +732,15 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 except (asyncio.CancelledError, asyncio.TimeoutError, ValueError) as e:
                     attempt += 1
                     self.logger.error(f"Attempt {attempt}/3: {str(e)}")
+                    if snapshot_ffmpeg_subprocess:
+                        await snapshot_ffmpeg_subprocess.stop()
                     if attempt >= 3:
                         raise Exception("Failed to get buffer from Arlo Cloud Stream after maximum retries")
                     self.logger.debug("Retrying...")
+                finally:
+                    if snapshot_ffmpeg_subprocess:
+                        await snapshot_ffmpeg_subprocess.stop()
+                    snapshot_ffmpeg_subprocess = None
 
             if buf is None or len(buf) == 0:
                 raise Exception("Failed to get buffer from Arlo Cloud Stream")
