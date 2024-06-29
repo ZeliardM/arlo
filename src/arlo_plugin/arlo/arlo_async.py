@@ -703,34 +703,6 @@ class Arlo(object):
             self.HandleEvents(basestation, resource, [('is', event_key)], callbackwrapper)
         )
 
-    def SubscribeToSipCallActiveEvents(self, basestation, camera, callback):
-        """
-        Use this method to subscribe to sip call active events.
-        You must provide a callback function which will get called once per event.
-
-        The callback function should have the following signature:
-        def callback(event)
-
-        Returns the Task object that contains the subscription loop.
-        """
-        if camera['deviceType'] == 'doorbell':
-            resource = f"doorbells/{camera.get('deviceId')}"
-        elif camera['deviceType'] == 'camera':
-            resource = f"cameras/{camera.get('deviceId')}"
-
-        def callbackwrapper(self, event):
-            properties = event.get('properties', {})
-            stop = None
-            if 'sipCallActive' in properties:
-                stop = callback(event.get('properties', {}))
-            if not stop:
-                return None
-            return stop
-
-        return asyncio.get_event_loop().create_task(
-            self.HandleEvents(basestation, resource, [('is', 'sipCallActive')], callbackwrapper)
-        )
-
     def SubscribeToDoorbellEvents(self, basestation, doorbell, callback):
         """
         Use this method to subscribe to doorbell events. You must provide a callback function which will get called once per doorbell event.
@@ -1260,17 +1232,6 @@ class Arlo(object):
             }
         })
 
-    def ChargeNotificationLedOff(self, basestation, camera):
-        resource = f"cameras/{camera.get('deviceId')}"
-        return self.Notify(basestation, {
-            "action": "set",
-            "resource": resource,
-            "publishResponse": True,
-            "properties": {
-                "chargeNotificationLedEnable": False,
-            },
-        })
-
     def ChargeNotificationLedOn(self, basestation, camera):
         resource = f"cameras/{camera.get('deviceId')}"
         return self.Notify(basestation, {
@@ -1279,6 +1240,17 @@ class Arlo(object):
             "publishResponse": True,
             "properties": {
                 "chargeNotificationLedEnable": True,
+            },
+        })
+
+    def ChargeNotificationLedOff(self, basestation, camera):
+        resource = f"cameras/{camera.get('deviceId')}"
+        return self.Notify(basestation, {
+            "action": "set",
+            "resource": resource,
+            "publishResponse": True,
+            "properties": {
+                "chargeNotificationLedEnable": False,
             },
         })
 
