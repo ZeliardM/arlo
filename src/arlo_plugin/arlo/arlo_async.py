@@ -556,7 +556,7 @@ class Arlo(object):
             properties = event.get('properties', {})
 
             stop = None
-            if event_key in properties:
+            if len(properties) == 1 and event_key in properties:
                 event_detected = properties[event_key]
                 delivery_delay = 10
 
@@ -673,7 +673,7 @@ class Arlo(object):
 
     def SubscribeToDeviceStateEvents(self, basestation, callback, camera=None):
         """
-        Use this method to subscribe to basestation or camera activity state events.
+        Use this method to subscribe to basestation or camera state events.
         You must provide a callback function which will get called once per event.
 
         The callback function should have the following signature:
@@ -681,26 +681,67 @@ class Arlo(object):
 
         Returns the Task object that contains the subscription loop.
         """
-        if camera is None:
-            resource = 'basestation'
-            event_key = 'state'
-        else:
-            resource = f"cameras/{camera['deviceId']}"
-            event_key = 'activityState'
+        is_wifi_camera = camera and basestation['deviceId'] == camera['deviceId']
+        resources = ['basestation'] if camera is None else ['basestation', f"cameras/{camera['deviceId']}"] if is_wifi_camera else [f"cameras/{camera['deviceId']}"]
+        event_keys = ['activityState', 'connectionState'] if camera else ['state']
+
+        def callbackwrapper(self, event):
+            if 'error' in event:
+                return
+            event_device_id = event.get('from', '')
+            event_resource = event.get('resource', '').split('/')[-1]  # Get the last part after '/'
+
+            # Check if the event is relevant for any of the resources
+            relevant_resource = False
+            for resource in resources:
+                if resource == 'basestation' and event_device_id == basestation['deviceId']:
+                    relevant_resource = True
+                    break
+                elif resource.startswith('cameras/') and event_resource == camera['deviceId']:
+                    relevant_resource = True
+                    break
+
+            if not relevant_resource:
+                return
+
+            for event_key in event_keys:
+                if event_key in event.get('properties', {}):
+                    callback(event.get('properties', {}))
+                    break
+
+        return asyncio.gather(*[
+            asyncio.get_event_loop().create_task(
+                self.HandleEvents(basestation, resource, [('is', event_key) for event_key in event_keys], callbackwrapper)
+            ) for resource in resources
+        ])
+
+    def SubscribeToDevicePingEvents(self, basestation, callback):
+        """
+        Use this method to subscribe to device ping events.
+        You must provide a callback function which will get called once per event.
+
+        The callback function should have the following signature:
+        def callback(event)
+
+        Returns the Task object that contains the subscription loop.
+        """
+        resource = f"subscriptions/{self.user_id}_web"
+        basestation_id = basestation.get('deviceId')
 
         def callbackwrapper(self, event):
             if 'error' in event:
                 return None
             properties = event.get('properties', {})
+            devices = properties.get('devices', [])
             stop = None
-            if event_key in properties:
-                stop = callback(event.get('properties', {}))
+            if basestation_id in devices:
+                stop = callback(True)
             if not stop:
                 return None
             return stop
 
         return asyncio.get_event_loop().create_task(
-            self.HandleEvents(basestation, resource, [('is', event_key)], callbackwrapper)
+            self.HandleEvents(basestation, resource, [('is', 'devices')], callbackwrapper)
         )
 
     def SubscribeToDoorbellEvents(self, basestation, doorbell, callback):

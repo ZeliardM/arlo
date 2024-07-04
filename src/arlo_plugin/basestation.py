@@ -25,6 +25,10 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
 
     async def delayed_init(self) -> None:
+        self.state_change_timer = None
+        self.start_state_subscription()
+        self.start_ping_subscription()
+
         self.logger.debug("Checking if Certificates are created with Arlo")
         cert_registered = self.peer_cert
         if cert_registered:
@@ -72,12 +76,46 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     def start_state_subscription(self) -> None:
         def callback(state):
-            self.arlo_properties['state'] = state['state']
+            if self.arlo_properties.get('state', '') != state.get('state', ''):
+                self.logger.debug(f"State is {state['state']}")
+                self.arlo_properties['state'] = state['state']
+            if self.arlo_properties.get('state', '') != 'idle':
+                if self.state_change_timer:
+                    self.state_change_timer.cancel()
+                self.state_change_timer = asyncio.create_task(self.state_change_timeout(self.arlo_device))
             return self.stop_subscriptions
 
         self.register_task(
             self.provider.arlo.SubscribeToDeviceStateEvents(self.arlo_device, callback)
         )
+
+    def start_ping_subscription(self) -> None:
+        def callback(state):
+            if state and self.arlo_properties.get('state', '') != 'idle':
+                self.logger.debug(f"State is idle")
+                self.arlo_properties['state'] = 'idle'
+            return self.stop_subscriptions
+
+        self.register_task(
+            self.provider.arlo.SubscribeToDevicePingEvents(self.arlo_device, callback)
+        )
+
+    async def state_change_timeout(self, arlo_device: dict) -> None:
+        retries = 0
+        while retries < 3:
+            await asyncio.sleep(30) 
+            if self.arlo_properties.get('state', '') != 'idle':
+                self.logger.debug(f"State is still {self.arlo_properties['state']} after 30 seconds, getting properties from Arlo.")
+                try:
+                    await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_device), timeout=10)
+                    break
+                except Exception as e:
+                    self.logger.error(f"Failed to get properties from Arlo: {e}")
+                    retries += 1
+                    if retries < 3:
+                        self.logger.debug(f"Retrying...")
+                    else:
+                        self.logger.error("Max retries reached to get properties from Arlo.")
 
     @property
     def has_siren(self) -> bool:

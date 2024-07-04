@@ -176,8 +176,9 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_brightness_subscription()
         self.start_charge_notification_led_subscription()
         self.start_smart_motion_subscription()
-        self.start_activity_state_subscription()
+        self.start_state_subscription()
 
+        self.state_change_timer = None
         self.motionDetected = self.get_property("motionDetected")
         self.audioDetected = self.get_property("audioDetected")
         self.brightness = ArloCamera.ARLO_TO_SCRYPTED_BRIGHTNESS_MAP[self.get_property("brightness")]
@@ -279,14 +280,46 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             self.provider.arlo.SubscribeToSmartMotionEvents(self.arlo_basestation, self.arlo_device, callback)
         )
 
-    def start_activity_state_subscription(self) -> None:
-        def callback(activity_state):
-            self.arlo_properties['activityState'] = activity_state['activityState']
+    def start_state_subscription(self) -> None:
+        def callback(state):
+            if 'activityState' in state and self.arlo_properties.get('activityState', '') != state['activityState']:
+                self.logger.debug(f"Activity State is {state['activityState']}")
+                self.arlo_properties['activityState'] = state['activityState']
+            if 'connectionState' in state and self.arlo_properties.get('connectionState', '') != state['connectionState']:
+                self.logger.debug(f"Connection State is {state['connectionState']}")
+                self.arlo_properties['connectionState'] = state['connectionState']
+                if self.arlo_device['deviceId'] == self.arlo_device['parentId'] and state.get('connectionState', '') == 'available' and self.arlo_properties.get('activityState', '') != 'idle':
+                    self.logger.debug(f"Activity State is idle")
+                    self.arlo_properties['activityState'] = 'idle'
+            if self.arlo_properties.get('activityState', '') != 'idle' or self.arlo_properties.get('connectionState', '') != 'available':
+                if self.state_change_timer:
+                    self.state_change_timer.cancel()
+                self.state_change_timer = asyncio.create_task(self.state_change_timeout(self.arlo_basestation, self.arlo_device))
             return self.stop_subscriptions
 
         self.register_task(
             self.provider.arlo.SubscribeToDeviceStateEvents(self.arlo_basestation, callback, self.arlo_device)
         )
+
+    async def state_change_timeout(self, arlo_basestation: dict, arlo_device: dict) -> None:
+        retries = 0
+        while retries < 3:
+            await asyncio.sleep(30)
+            try:
+                if self.arlo_properties.get('activityState', '') != 'idle':
+                    self.logger.debug(f"Activity State is still {self.arlo_properties['activityState']} after 30 seconds, getting properties from Arlo.")
+                    await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_basestation, arlo_device), timeout=10)
+                if self.arlo_properties.get('connectionState', '') != 'available':
+                    self.logger.debug(f"Connection State is still {self.arlo_properties['connectionState']} after 30 seconds, getting properties from Arlo.")
+                    await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_basestation, arlo_device), timeout=10)
+                break
+            except Exception as e:
+                self.logger.error(f"Failed to get properties from Arlo: {e}")
+                retries += 1
+                if retries < 3:
+                    self.logger.debug(f"Retrying...")
+                else:
+                    self.logger.error("Max retries reached to get properties from Arlo.")
 
     def get_applicable_interfaces(self) -> List[str]:
         results = set([

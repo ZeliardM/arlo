@@ -846,7 +846,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 continue
 
             if nativeId in self.arlo_cameras:
-                self.logger.info(f"Skipping basestation {nativeId} ({basestation['modelId']}) because it is also a camera.")
+                self.logger.info(f"Skipping basestation {nativeId} ({basestation['modelId']}) because it is direct wi-fi camera.")
                 continue
 
             self.logger.debug(f"Creating {nativeId}")
@@ -874,8 +874,8 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
         if len(self.arlo_basestations) != len(basestation_devices):
             self.logger.info(f"Created {len(self.arlo_basestations)} basestations, but only {len(basestation_devices)} are shown.")
-            self.logger.info("This could be because some of the basestations are hidden or are also cameras.")
-            self.logger.info("If a basestation is not hidden and not a camera but is still missing, ensure "
+            self.logger.info("This could be because some of the basestations are hidden or are direct wi-fi cameras.")
+            self.logger.info("If a basestation is not hidden and not a direct wi-fi camera but is still missing, ensure "
                              "all basestations are added correctly in the Arlo App.")
         else:
             self.logger.info(f"Created {len(self.arlo_basestations)} basestations.")
