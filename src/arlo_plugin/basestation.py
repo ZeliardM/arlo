@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta
 import json
 from typing import List, TYPE_CHECKING
 
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings): 
 
     vss: ArloSirenVirtualSecuritySystem = None
-    device_status: str = None
+    reboot_time: datetime = datetime(1970, 1, 1)
 
     def __init__(self, nativeId: str, arlo_basestation: dict, arlo_properties: dict, provider: ArloProvider) -> None:
         super().__init__(nativeId=nativeId, arlo_device=arlo_basestation, arlo_basestation=arlo_basestation, arlo_properties=arlo_properties, provider=provider)
@@ -79,10 +80,6 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             if self.arlo_properties.get('state', '') != state.get('state', ''):
                 self.logger.debug(f"State is {state['state']}")
                 self.arlo_properties['state'] = state['state']
-            if self.arlo_properties.get('state', '') != 'idle':
-                if self.state_change_timer:
-                    self.state_change_timer.cancel()
-                self.state_change_timer = asyncio.create_task(self.state_change_timeout(self.arlo_device))
             return self.stop_subscriptions
 
         self.register_task(
@@ -91,6 +88,11 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     def start_ping_subscription(self) -> None:
         def callback(state):
+            if self.reboot_time:
+                if datetime.now() - self.reboot_time < timedelta(seconds=30):
+                    self.logger.debug("Reboot time is within the last 30 seconds, not resetting state to idle.")
+                    return self.stop_subscriptions
+
             if state and self.arlo_properties.get('state', '') != 'idle':
                 self.logger.debug(f"State is idle")
                 self.arlo_properties['state'] = 'idle'
@@ -100,22 +102,23 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             self.provider.arlo.SubscribeToDevicePingEvents(self.arlo_device, callback)
         )
 
-    async def state_change_timeout(self, arlo_device: dict) -> None:
-        retries = 0
-        while retries < 3:
-            await asyncio.sleep(30) 
-            if self.arlo_properties.get('state', '') != 'idle':
-                self.logger.debug(f"State is still {self.arlo_properties['state']} after 30 seconds, getting properties from Arlo.")
-                try:
-                    await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_device), timeout=10)
-                    break
-                except Exception as e:
-                    self.logger.error(f"Failed to get properties from Arlo: {e}")
-                    retries += 1
-                    if retries < 3:
-                        self.logger.debug(f"Retrying...")
+    def start_state_change_check(self) -> None:
+        task = asyncio.get_event_loop().create_task(self.state_change_check(self.arlo_device))
+        self.register_task(task)
+
+    async def state_change_check(self, arlo_device: dict) -> None:
+        while True:
+            await asyncio.sleep(30)
+            try:
+                if self.arlo_properties.get('state', '') != 'idle':
+                    if self.arlo_properties.get('state', '') == 'rebooting':
+                        raise ValueError("Device is rebooting, skipping TriggerProperties for state.")
                     else:
-                        self.logger.error("Max retries reached to get properties from Arlo.")
+                        self.logger.debug(f"State is still {self.arlo_properties['state']} after 30 seconds, getting properties from Arlo.")
+                        await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_device), timeout=10)
+            except Exception as e:
+                self.logger.error(f"Failed to get properties from Arlo: {e}")
+                self.logger.debug(f"Retrying...")
 
     @property
     def has_siren(self) -> bool:
@@ -287,7 +290,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
             # self.logger.debug(f'Private Key:\n{self.provider.arlo_private_key}')
         elif key == "restart_device":
             self.logger.info("Restarting Device")
-            self.device_status = "Rebooting"
+            self.reboot_time = datetime.now()
             self.provider.arlo.RestartDevice(self.arlo_device["deviceId"])
         elif key in ["ip_addr", "hostname"]:
             self.storage.setItem(key, value)

@@ -955,7 +955,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                         "serialNumber": "12345",
                     },
                     "nativeId": nativeId,
-                    "name": f'Arlo Security Mode Security System - {locations[location]}',
+                    "name": f'Arlo Security Mode Security System {locations[location]}',
                     "interfaces": scrypted_interfaces,
                     "type": device.get_device_type(),
                     "providerNativeId": None,

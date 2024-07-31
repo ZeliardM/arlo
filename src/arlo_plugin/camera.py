@@ -142,7 +142,6 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     intercom_session: ArloCameraIntercomSession = None
     light: ArloSpotlight = None
     vss: ArloSirenVirtualSecuritySystem = None
-    reboot_event: dict = None
 
     # eco mode bookkeeping
     snapshot_lock: asyncio.Lock = None
@@ -177,6 +176,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         self.start_charge_notification_led_subscription()
         self.start_smart_motion_subscription()
         self.start_state_subscription()
+        self.start_state_change_check()
 
         self.state_change_timer = None
         self.motionDetected = self.get_property("motionDetected")
@@ -291,35 +291,43 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 if self.arlo_device['deviceId'] == self.arlo_device['parentId'] and state.get('connectionState', '') == 'available' and self.arlo_properties.get('activityState', '') != 'idle':
                     self.logger.debug(f"Activity State is idle")
                     self.arlo_properties['activityState'] = 'idle'
-            if self.arlo_properties.get('activityState', '') != 'idle' or self.arlo_properties.get('connectionState', '') != 'available':
-                if self.state_change_timer:
-                    self.state_change_timer.cancel()
-                self.state_change_timer = asyncio.create_task(self.state_change_timeout(self.arlo_basestation, self.arlo_device))
             return self.stop_subscriptions
 
         self.register_task(
             self.provider.arlo.SubscribeToDeviceStateEvents(self.arlo_basestation, callback, self.arlo_device)
         )
 
-    async def state_change_timeout(self, arlo_basestation: dict, arlo_device: dict) -> None:
-        retries = 0
-        while retries < 3:
+    def start_state_change_check(self) -> None:
+        task = asyncio.get_event_loop().create_task(self.state_change_check(self.arlo_basestation, self.arlo_device))
+        self.register_task(task)
+
+    async def state_change_check(self, arlo_basestation: dict, arlo_device: dict) -> None:
+        while True:
             await asyncio.sleep(30)
             try:
                 if self.arlo_properties.get('activityState', '') != 'idle':
-                    self.logger.debug(f"Activity State is still {self.arlo_properties['activityState']} after 30 seconds, getting properties from Arlo.")
-                    await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_basestation, arlo_device), timeout=10)
+                    prebuffer_id = None
+
+                    scrypted_device = scrypted_sdk.systemManager.getDeviceById(self.getScryptedProperty("id"))
+                    if scrypted_device:
+                        msos = await scrypted_device.getVideoStreamOptions()
+                        prebuffer_id = next((m['id'] for m in msos if 'prebuffer' in m), None) if msos else None
+
+                    if prebuffer_id:
+                        raise ValueError("Stream is active, skipping TriggerProperties for activityState.")
+                    else:
+                        self.logger.debug(f"Activity State is still {self.arlo_properties['activityState']} after 30 seconds, getting properties from Arlo.")
+                        await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_basestation, arlo_device), timeout=10)
+
                 if self.arlo_properties.get('connectionState', '') != 'available':
-                    self.logger.debug(f"Connection State is still {self.arlo_properties['connectionState']} after 30 seconds, getting properties from Arlo.")
-                    await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_basestation, arlo_device), timeout=10)
-                break
+                    if self.arlo_properties.get('connectionState', '') == 'unavailable':
+                        raise ValueError("Device is rebooting, skipping TriggerProperties for connectionState.")
+                    else:
+                        self.logger.debug(f"Connection State is still {self.arlo_properties['connectionState']} after 30 seconds, getting properties from Arlo.")
+                        await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_basestation, arlo_device), timeout=10)
             except Exception as e:
                 self.logger.error(f"Failed to get properties from Arlo: {e}")
-                retries += 1
-                if retries < 3:
-                    self.logger.debug(f"Retrying...")
-                else:
-                    self.logger.error("Max retries reached to get properties from Arlo.")
+                self.logger.debug(f"Retrying...")
 
     def get_applicable_interfaces(self) -> List[str]:
         results = set([
@@ -623,6 +631,19 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 return False
         return True
 
+    async def waitForStateChange(self) -> None:
+        start_time = asyncio.get_event_loop().time()
+        self.logger.debug("Checking activity state...")
+        while True:
+            current_state = self.arlo_properties.get('activityState', '')
+            if current_state == 'idle':
+                self.logger.debug("Activity State is idle, continuing...")
+                break
+            elif (asyncio.get_event_loop().time() - start_time) > self.timeout:
+                raise TimeoutError("Waiting for activity state to be idle timed out")
+            self.logger.debug("Activity State is not idle, waiting...")
+            await asyncio.sleep(1)
+
     async def getPictureOptions(self) -> List[ResponsePictureOptions]:
         return []
 
@@ -690,6 +711,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
     async def getSnapshotUrl(self):
         self.logger.debug("Getting snapshot URL")
         try:
+            await self.waitForStateChange()
             snapshot_url = await asyncio.wait_for(self.provider.arlo.TriggerFullFrameSnapshot(self.arlo_basestation, self.arlo_device), timeout=10)
         except Exception:
             raise ValueError("Failed to get snapshot URL")
@@ -750,6 +772,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @async_print_exception_guard
     async def startRTCSignalingSession(self, scrypted_session):
+        await self.waitForStateChange()
         self.logger.debug("Entered startRTCSignalingSession")
 
         plugin_session = ArloCameraRTCSignalingSession(self)
@@ -910,6 +933,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         return next(iter([o for o in options if o['id'] == id]))
 
     async def _getVideoStreamURL(self, name: str, container: str) -> str:
+        await self.waitForStateChange()
         if name == "Local RTSP":
             self.logger.info("Setting up local RTSP stream")
 

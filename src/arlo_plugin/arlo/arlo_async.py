@@ -689,9 +689,8 @@ class Arlo(object):
             if 'error' in event:
                 return
             event_device_id = event.get('from', '')
-            event_resource = event.get('resource', '').split('/')[-1]  # Get the last part after '/'
+            event_resource = event.get('resource', '').split('/')[-1]
 
-            # Check if the event is relevant for any of the resources
             relevant_resource = False
             for resource in resources:
                 if resource == 'basestation' and event_device_id == basestation['deviceId']:
