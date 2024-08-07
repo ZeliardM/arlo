@@ -631,17 +631,21 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                 return False
         return True
 
-    async def waitForStateChange(self) -> None:
+    async def waitForStateChange(self, name: str = None) -> None:
         start_time = asyncio.get_event_loop().time()
         self.logger.debug("Checking activity state...")
         while True:
             current_state = self.arlo_properties.get('activityState', '')
-            if current_state == 'idle':
-                self.logger.debug("Activity State is idle, continuing...")
+            scrypted_device = scrypted_sdk.systemManager.getDeviceById(self.getScryptedProperty("id"))
+            if scrypted_device:
+                msos = await scrypted_device.getVideoStreamOptions()
+                prebuffer_name = next((m['name'] for m in msos if 'prebuffer' in m), None) if msos else None
+            if current_state == 'idle' or (not prebuffer_name and name == prebuffer_name):                
+                self.logger.debug("Activity State is idle or selected stream is currently active, continuing...")
                 break
             elif (asyncio.get_event_loop().time() - start_time) > self.timeout:
                 raise TimeoutError("Waiting for activity state to be idle timed out")
-            self.logger.debug("Activity State is not idle, waiting...")
+            self.logger.debug("Activity State is not idle or selected stream is not the current active stream, waiting...")
             await asyncio.sleep(1)
 
     async def getPictureOptions(self) -> List[ResponsePictureOptions]:
@@ -772,7 +776,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
 
     @async_print_exception_guard
     async def startRTCSignalingSession(self, scrypted_session):
-        await self.waitForStateChange()
+        await self.waitForStateChange('WebRTC')
         self.logger.debug("Entered startRTCSignalingSession")
 
         plugin_session = ArloCameraRTCSignalingSession(self)
@@ -933,7 +937,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         return next(iter([o for o in options if o['id'] == id]))
 
     async def _getVideoStreamURL(self, name: str, container: str) -> str:
-        await self.waitForStateChange()
+        await self.waitForStateChange(name)
         if name == "Local RTSP":
             self.logger.info("Setting up local RTSP stream")
 
