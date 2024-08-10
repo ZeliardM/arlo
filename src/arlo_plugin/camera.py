@@ -640,7 +640,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             if scrypted_device:
                 msos = await scrypted_device.getVideoStreamOptions()
                 prebuffer_name = next((m['name'] for m in msos if 'prebuffer' in m), None) if msos else None
-            if current_state == 'idle' or (not prebuffer_name and name == prebuffer_name):
+            if current_state == 'idle' or (prebuffer_name and name == prebuffer_name):
                 self.logger.debug("Activity State is idle or selected stream is currently active, continuing...")
                 break
             elif (asyncio.get_event_loop().time() - start_time) > self.timeout:
