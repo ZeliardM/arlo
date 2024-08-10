@@ -372,10 +372,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             light = self.get_or_create_light()
             results.append({
                 "info": {
-                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
+                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties.get('hwVersion', '').replace(self.arlo_device['modelId'], '').strip()}".strip(),
                     "manufacturer": "Arlo",
                     "serialNumber": self.arlo_device["deviceId"],
-                    "firmware": self.arlo_properties["swVersion"],
+                    "firmware": self.arlo_properties.get("swVersion"),
                 },
                 "nativeId": light.nativeId,
                 "name": f'{self.arlo_device["deviceName"]} {"Spotlight" if self.has_spotlight else "Floodlight" if self.has_floodlight else "Nightlight"}',
@@ -388,10 +388,10 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             results.extend([
                 {
                     "info": {
-                        "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
+                        "model": f"{self.arlo_device['modelId']} {self.arlo_properties.get('hwVersion', '').replace(self.arlo_device['modelId'], '').strip()}".strip(),
                         "manufacturer": "Arlo",
                         "serialNumber": self.arlo_device["deviceId"],
-                        "firmware": self.arlo_properties["swVersion"],
+                        "firmware": self.arlo_properties.get("swVersion"),
                     },
                     "nativeId": vss.nativeId,
                     "name": f'{self.arlo_device["deviceName"]} Siren Virtual Security System',
@@ -640,7 +640,7 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
             if scrypted_device:
                 msos = await scrypted_device.getVideoStreamOptions()
                 prebuffer_name = next((m['name'] for m in msos if 'prebuffer' in m), None) if msos else None
-            if current_state == 'idle' or (not prebuffer_name and name == prebuffer_name):                
+            if current_state == 'idle' or (not prebuffer_name and name == prebuffer_name):
                 self.logger.debug("Activity State is idle or selected stream is currently active, continuing...")
                 break
             elif (asyncio.get_event_loop().time() - start_time) > self.timeout:

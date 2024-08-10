@@ -67,10 +67,10 @@ class ArloSirenVirtualSecuritySystem(ArloDeviceBase, SecuritySystem, Settings, R
         return [
             {
                 "info": {
-                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
+                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties.get('hwVersion', '').replace(self.arlo_device['modelId'], '').strip()}".strip(),
                     "manufacturer": "Arlo",
                     "serialNumber": self.arlo_device["deviceId"],
-                    "firmware": self.arlo_properties["swVersion"],
+                    "firmware": self.arlo_properties.get("swVersion"),
                 },
                 "nativeId": siren.nativeId,
                 "name": f'{self.arlo_device["deviceName"]} Siren',

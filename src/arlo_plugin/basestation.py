@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from .provider import ArloProvider
 
 
-class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings): 
+class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     vss: ArloSirenVirtualSecuritySystem = None
     reboot_time: datetime = datetime(1970, 1, 1)
@@ -127,7 +127,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
     @property
     def has_local_live_streaming(self) -> bool:
         return self.has_capability("supported", "sipLiveStream") and self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
-    
+
     @property
     def can_restart(self) -> bool:
         return self.provider.arlo_user_id == self.arlo_device["owner"]["ownerId"]
@@ -197,10 +197,10 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         return [
             {
                 "info": {
-                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties['hwVersion'].replace(self.arlo_device['modelId'], '').strip()}".strip(),
+                    "model": f"{self.arlo_device['modelId']} {self.arlo_properties.get('hwVersion', '').replace(self.arlo_device['modelId'], '').strip()}".strip(),
                     "manufacturer": "Arlo",
                     "serialNumber": self.arlo_device["deviceId"],
-                    "firmware": self.arlo_properties["swVersion"],
+                    "firmware": self.arlo_properties.get("swVersion"),
                 },
                 "nativeId": vss.nativeId,
                 "name": f'{self.arlo_device["deviceName"]} Siren Virtual Security System',
