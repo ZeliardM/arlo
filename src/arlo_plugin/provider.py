@@ -1059,7 +1059,11 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             except asyncio.TimeoutError:
                 self.logger.error(f"Timeout while fetching properties for {camera['deviceId'] if camera else basestation['deviceId']}")
                 arlo_properties = {}
+            except Exception as e:
+                self.logger.error(f"Error while fetching properties for {camera['deviceId'] if camera else basestation['deviceId']}: {e}")
+                arlo_properties = {}
         else:
             self.logger.error(f"Failed to fetch properties for {camera['deviceId'] if camera else basestation['deviceId']} after 3 attempts")
             arlo_properties = {}
+
         return arlo_properties
