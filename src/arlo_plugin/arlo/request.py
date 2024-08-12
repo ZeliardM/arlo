@@ -56,7 +56,7 @@ class Request(object):
     def get_time(self):
         return int(time.time_ns() / 1_000_000)
 
-    def _request(self, url, method='GET', params={}, headers={}, raw=False, skip_event_id=False):
+    def _request(self, url, method='GET', params={}, headers={}, raw=False, skip_event_id=False, stream=False):
 
         ## uncomment for debug logging
         """
@@ -70,37 +70,43 @@ class Request(object):
         req_log.propagate = True
         #"""
 
+        # Debug logging for URL and method
+        # logger.debug(f"Making {method} request to URL: {url} with params: {params} and headers: {headers}")
+
         if not skip_event_id:
             if "automation" not in url:
                 url = f'{url}?eventId={self.gen_event_id()}&time={self.get_time()}'
             else:
                 url = f'{url}&eventId={self.gen_event_id()}&time={self.get_time()}'
 
-        if method == 'GET':
-            #print('COOKIES: ', self.session.cookies.get_dict())
-            r = self.session.get(url, params=params, headers=headers, timeout=self.timeout)
-            r.raise_for_status()
-        elif method == 'PUT':
-            r = self.session.put(url, json=params, headers=headers, timeout=self.timeout)
-            r.raise_for_status()
-        elif method == 'POST':
-            r = self.session.post(url, json=params, headers=headers, timeout=self.timeout)
-            r.raise_for_status()
-        elif method == 'OPTIONS':
-            r = self.session.options(url, headers=headers, timeout=self.timeout)
-            r.raise_for_status()
-            return
+        # logger.debug(f"Final URL after adding event ID and time: {url}")
 
-        body = r.json()
+        try:
+            if method == 'GET':
+                r = self.session.get(url, params=params, headers=headers, timeout=self.timeout, stream=stream)
+            elif method == 'PUT':
+                r = self.session.put(url, json=params, headers=headers, timeout=self.timeout)
+            elif method == 'POST':
+                r = self.session.post(url, json=params, headers=headers, timeout=self.timeout)
+            elif method == 'OPTIONS':
+                r = self.session.options(url, headers=headers, timeout=self.timeout)
+                r.raise_for_status()
+                return
 
-        if raw:
-            return body
-        else:
-            if ('success' in body and body['success'] == True) or ('meta' in body and body['meta']['code'] == 200):
-                if 'data' in body:
-                    return body['data']
+            r.raise_for_status()
+            body = r.json()
+
+            if raw:
+                return body
             else:
-                raise HTTPError('Request ({0} {1}) failed: {2}'.format(method, url, r.json()), response=r)
+                if ('success' in body and body['success'] == True) or ('meta' in body and body['meta']['code'] == 200):
+                    if 'data' in body:
+                        return body['data']
+                else:
+                    raise HTTPError(f"Request ({method} {url}) failed with status code {r.status_code}: {r.text}", response=r)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request ({method} {url}) failed: {e}")
+            raise HTTPError(f"Request ({method} {url}) encountered an error: {e}", response=e.response)
 
     def get(self, url, **kwargs):
         return self._request(url, 'GET', **kwargs)

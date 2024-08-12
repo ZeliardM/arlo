@@ -821,6 +821,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 # so they act as their own basestation
                 self.arlo_basestations[camera["deviceId"]] = camera
 
+        self.logger.info(f"Discovered {len(self.arlo_basestations)} basestations.")
+        self.logger.info(f"Discovered {len(self.arlo_cameras)} cameras.")
+
     @async_print_exception_guard
     async def create_devices(self) -> None:
         async with self.device_discovery_lock:

@@ -149,7 +149,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         self.logger.debug("Initializing mDNS Discovery for basestation.")
         for i in range(5):
             try:
-                mdns = AsyncBrowser()
+                mdns = AsyncBrowser(self.logger)
                 await mdns.async_run()
                 self.storage.setItem("mdns_boolean", bool(mdns.services))
                 if self.mdns_boolean == True:

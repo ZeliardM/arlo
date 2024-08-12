@@ -136,7 +136,10 @@ class PyEventStream(Stream):
                 event_stream.exiting = True
                 self.event_loop.call_soon_threadsafe(self.event_loop.create_task, self.restart())
 
-        self.event_stream = SSEClient('https://myapi.arlo.com/hmsweb/client/subscribe?token='+self.arlo.request.session.headers.get('Authorization'), session=self.arlo.request.session)
+        # Ensure the response is streamed
+        url = 'https://myapi.arlo.com/hmsweb/client/subscribe?token=' + self.arlo.request.session.headers.get('Authorization')
+        headers = scrypted_arlo_go.HeadersMap(self.arlo.request.session.headers)
+        self.event_stream = SSEClient(url, headers=headers)
         self.event_stream_thread = threading.Thread(name="PyEventStream", target=thread_main, args=(self, ))
         self.event_stream_thread.setDaemon(True)
         self.event_stream_thread.start()
