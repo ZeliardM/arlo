@@ -17,7 +17,7 @@ class AsyncListener:
 
     async def async_write_service_info(self, zeroconf: Zeroconf, service_type: str, name: str) -> None:
         info = AsyncServiceInfo(service_type, name)
-        await info.async_request(zeroconf, 3000)
+        await info.async_request(zeroconf, 1000)
 
         if info:
             addresses = [addr for addr in info.parsed_scoped_addresses()]
@@ -36,6 +36,7 @@ class AsyncBrowser:
         self.aiolistener: Optional[AsyncListener] = None
         self.services: Dict[str, Dict[str, Any]] = {}
         self.logger = logger
+        self.logger.debug("AsyncBrowser opened")
 
     async def async_run(self) -> None:
         try:
@@ -43,7 +44,7 @@ class AsyncBrowser:
             self.aiolistener = AsyncListener(self.logger)
             services = ["_arlo-video._tcp.local."]
             self.aiobrowser = AsyncServiceBrowser(self.aiozc.zeroconf, services, handlers=[self.aiolistener.async_on_service_state_change])
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
             self.services = self.aiolistener.services
         except Exception as e:
             self.logger.error(f"Error running AsyncBrowser: {e}")

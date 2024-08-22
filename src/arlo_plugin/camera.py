@@ -298,14 +298,17 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
         )
 
     def start_state_change_check(self) -> None:
-        task = asyncio.get_event_loop().create_task(self.state_change_check(self.arlo_basestation, self.arlo_device))
+        task = asyncio.get_event_loop().create_task(self.state_change_check())
         self.register_task(task)
 
-    async def state_change_check(self, arlo_basestation: dict, arlo_device: dict) -> None:
+    async def state_change_check(self) -> None:
         while True:
             await asyncio.sleep(30)
             try:
-                if self.arlo_properties.get('activityState', '') != 'idle':
+                activity_state = self.arlo_properties.get('activityState', '')
+                connection_state = self.arlo_properties.get('connectionState', '')
+
+                if not activity_state or activity_state != 'idle':
                     prebuffer_id = None
 
                     scrypted_device = scrypted_sdk.systemManager.getDeviceById(self.getScryptedProperty("id"))
@@ -316,18 +319,18 @@ class ArloCamera(ArloDeviceBase, Settings, Camera, VideoCamera, Brightness, Obje
                     if prebuffer_id:
                         raise ValueError("Stream is active, skipping TriggerProperties for activityState.")
                     else:
-                        self.logger.debug(f"Activity State is still {self.arlo_properties['activityState']} after 30 seconds, getting properties from Arlo.")
-                        await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_basestation, arlo_device), timeout=10)
+                        self.logger.debug(f"Activity State is still {activity_state} after 30 seconds, getting properties from Arlo.")
+                        self.arlo_properties = await asyncio.wait_for(self.provider.arlo.TriggerProperties(self.arlo_basestation, self.arlo_device), timeout=10)
 
-                if self.arlo_properties.get('connectionState', '') != 'available':
-                    if self.arlo_properties.get('connectionState', '') == 'unavailable':
+                if not connection_state or connection_state != 'available':
+                    if connection_state == 'unavailable':
                         raise ValueError("Device is rebooting, skipping TriggerProperties for connectionState.")
                     else:
-                        self.logger.debug(f"Connection State is still {self.arlo_properties['connectionState']} after 30 seconds, getting properties from Arlo.")
-                        await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_basestation, arlo_device), timeout=10)
+                        self.logger.debug(f"Connection State is still {connection_state} after 30 seconds, getting properties from Arlo.")
+                        self.arlo_properties = await asyncio.wait_for(self.provider.arlo.TriggerProperties(self.arlo_basestation, self.arlo_device), timeout=10)
             except Exception as e:
                 self.logger.error(f"Failed to get properties from Arlo: {e}")
-                self.logger.debug(f"Retrying...")
+                self.logger.debug("Retrying...")
 
     def get_applicable_interfaces(self) -> List[str]:
         results = set([

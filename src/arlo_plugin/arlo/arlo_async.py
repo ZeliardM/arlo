@@ -727,14 +727,14 @@ class Arlo(object):
         resource = f"subscriptions/{self.user_id}_web"
         basestation_id = basestation.get('deviceId')
 
-        def callbackwrapper(self, event):
+        async def callbackwrapper(self, event):
             if 'error' in event:
                 return None
             properties = event.get('properties', {})
             devices = properties.get('devices', [])
             stop = None
             if basestation_id in devices:
-                stop = callback(True)
+                stop = await callback(True)
             if not stop:
                 return None
             return stop

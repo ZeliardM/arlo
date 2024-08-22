@@ -20,6 +20,7 @@ from scrypted_sdk.types import Setting, SettingValue, Settings, DeviceProvider, 
 from .arlo import Arlo, NO_MFA
 from .arlo.arlo_async import change_stream_class
 from .arlo.logging import logger as arlo_lib_logger
+from .arlo.mdns import AsyncBrowser
 from .logging import ScryptedDeviceLoggerMixin, EXTRA_VERBOSE
 from .util import BackgroundTaskMixin, async_print_exception_guard
 from .base import ArloDeviceBase
@@ -235,6 +236,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             one_location = False
             self.storage.setItem("one_location", one_location)
         return one_location
+    
+    @property
+    def mdns_services(self) -> dict:
+        return self.storage.getItem("mdns_services")
 
     @property
     def stop_plugin(self) -> bool:
@@ -309,6 +314,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
     async def do_arlo_setup(self) -> None:
         try:
+            await self.mdns()
             await self.discover_devices()
             await self.arlo.Subscribe([
                 (self.arlo_basestations[camera["parentId"]], camera) for camera in self.arlo_cameras.values()
@@ -1008,19 +1014,16 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         self._device_discovery_promise.set_result(None)
 
     async def getDevice(self, nativeId: str) -> ArloDeviceBase:
-        if self.stop_plugin:
-            return None
-
-        self.logger.debug(f"Scrypted requested to load device {nativeId}")
-        async with self.device_discovery_lock:
-            return await self.getDevice_impl(nativeId)
+        if not self.stop_plugin:
+            self.logger.debug(f"Scrypted requested to load device {nativeId}")
+            async with self.device_discovery_lock:
+                return await self.getDevice_impl(nativeId)
+        return None
 
     async def getDevice_impl(self, nativeId: str, arlo_properties: dict = None) -> ArloDeviceBase:
-        ret = self.scrypted_devices.get(nativeId)
-        if ret is None:
-            ret = self.create_device(nativeId, arlo_properties)
-            if ret is not None:
-                self.scrypted_devices[nativeId] = ret
+        ret = self.scrypted_devices.get(nativeId) or self.create_device(nativeId, arlo_properties)
+        if ret is not None:
+            self.scrypted_devices[nativeId] = ret
         return ret
 
     def create_device(self, nativeId: str, arlo_properties: dict) -> ArloDeviceBase:
@@ -1029,31 +1032,27 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             return None
 
         if nativeId.endswith("smss"):
-            arlo_device = self.arlo_smss[nativeId]
-            arlo_basestation = self.arlo_smss[nativeId]
+            arlo_device = arlo_basestation = self.arlo_smss[nativeId]
             return ArloSecurityModeSecuritySystem(nativeId, arlo_device, arlo_basestation, arlo_properties, self)
 
         arlo_device = self.arlo_cameras.get(nativeId)
         if not arlo_device:
-            # this is a basestation, so build the basestation object
             arlo_device = self.arlo_basestations[nativeId]
             return ArloBasestation(nativeId, arlo_device, arlo_properties, self)
 
         if arlo_device["parentId"] not in self.arlo_basestations:
             self.logger.warning(f"Cannot create camera with nativeId {nativeId} when {arlo_device['parentId']} is not a valid basestation")
             return None
+
         arlo_basestation = self.arlo_basestations[arlo_device["parentId"]]
 
         if arlo_device["deviceType"] == "doorbell":
             return ArloDoorbell(nativeId, arlo_device, arlo_basestation, arlo_properties, self)
-        else:
-            return ArloCamera(nativeId, arlo_device, arlo_basestation, arlo_properties, self)
+        return ArloCamera(nativeId, arlo_device, arlo_basestation, arlo_properties, self)
 
     async def getDeviceProperties(self, basestation: dict, camera: dict = None) -> dict:
-        if basestation == camera:
-            timeout = 10
-        else:
-            timeout = 5
+        timeout = 10 if basestation == camera else 5
+        arlo_properties = {}
 
         for _ in range(3):
             try:
@@ -1061,12 +1060,20 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 break
             except asyncio.TimeoutError:
                 self.logger.error(f"Timeout while fetching properties for {camera['deviceId'] if camera else basestation['deviceId']}")
-                arlo_properties = {}
             except Exception as e:
                 self.logger.error(f"Error while fetching properties for {camera['deviceId'] if camera else basestation['deviceId']}: {e}")
-                arlo_properties = {}
         else:
             self.logger.error(f"Failed to fetch properties for {camera['deviceId'] if camera else basestation['deviceId']} after 3 attempts")
-            arlo_properties = {}
 
         return arlo_properties
+    
+    async def mdns(self) -> None:
+        self.logger.debug("Initializing mDNS Discovery for basestations.")
+        try:
+            mdns = AsyncBrowser(self.logger)
+            await mdns.async_run()
+            self.storage.setItem("mdns_services", mdns.services)
+            if self.mdns_services:
+                self.logger.debug(f"Basestations found in mDNS.")
+        except:
+            self.logger.error("Basestations not found in mDNS, manual input needed under basestations settings.")

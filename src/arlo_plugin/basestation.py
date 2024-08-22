@@ -87,7 +87,7 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         )
 
     def start_ping_subscription(self) -> None:
-        def callback(state):
+        async def callback(state):
             if self.reboot_time:
                 if datetime.now() - self.reboot_time < timedelta(seconds=30):
                     self.logger.debug("Reboot time is within the last 30 seconds, not resetting state to idle.")
@@ -95,7 +95,10 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
             if state and self.arlo_properties.get('state', '') != 'idle':
                 self.logger.debug(f"State is idle")
-                self.arlo_properties['state'] = 'idle'
+                await self.provider.mdns()
+                if self.has_local_live_streaming:
+                    await self.mdns()
+                self.arlo_properties = await asyncio.wait_for(self.provider.arlo.TriggerProperties(self.arlo_device), timeout=10)
             return self.stop_subscriptions
 
         self.register_task(
@@ -103,19 +106,21 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
         )
 
     def start_state_change_check(self) -> None:
-        task = asyncio.get_event_loop().create_task(self.state_change_check(self.arlo_device))
+        task = asyncio.get_event_loop().create_task(self.state_change_check())
         self.register_task(task)
 
-    async def state_change_check(self, arlo_device: dict) -> None:
+    async def state_change_check(self) -> None:
         while True:
             await asyncio.sleep(30)
             try:
-                if self.arlo_properties.get('state', '') != 'idle':
-                    if self.arlo_properties.get('state', '') == 'rebooting':
+                state = self.arlo_properties.get('state', '')
+
+                if not state or state != 'idle':
+                    if state == 'rebooting':
                         raise ValueError("Device is rebooting, skipping TriggerProperties for state.")
                     else:
-                        self.logger.debug(f"State is still {self.arlo_properties['state']} after 30 seconds, getting properties from Arlo.")
-                        await asyncio.wait_for(self.provider.arlo.TriggerProperties(arlo_device), timeout=10)
+                        self.logger.debug(f"State is still {state} after 30 seconds, getting properties from Arlo.")
+                        self.arlo_properties = await asyncio.wait_for(self.provider.arlo.TriggerProperties(self.arlo_device), timeout=10)
             except Exception as e:
                 self.logger.error(f"Failed to get properties from Arlo: {e}")
                 self.logger.debug(f"Retrying...")
@@ -146,24 +151,14 @@ class ArloBasestation(ArloDeviceBase, DeviceProvider, Settings):
 
     async def mdns(self) -> None:
         self.storage.setItem("mdns_boolean", False)
-        self.logger.debug("Initializing mDNS Discovery for basestation.")
-        for i in range(5):
-            try:
-                mdns = AsyncBrowser(self.logger)
-                await mdns.async_run()
-                self.storage.setItem("mdns_boolean", bool(mdns.services))
-                if self.mdns_boolean == True:
-                    if i == 0:
-                        self.logger.debug(f"Basestation found in mDNS, took {i+1} try.")
-                    else:
-                        self.logger.debug(f"Basestation found in mDNS, took {i+1} tries.")
-                    self.storage.setItem("ip_addr", mdns.services[self.arlo_device['deviceId']].get('address'))
-                    self.storage.setItem("hostname", mdns.services[self.arlo_device['deviceId']].get('server'))
-                    break
-            except:
-                self.logger.debug("Basestation not found, trying mDNS again.")
-
-            await asyncio.sleep(0.5)
+        self.storage.setItem("ip_addr", "")
+        self.storage.setItem("hostname", "")
+        self.logger.debug("Checking if Basestation is found in mDNS.")
+        self.storage.setItem("mdns_boolean", bool(self.provider.mdns_services.get(self.arlo_device['deviceId'])))
+        if self.mdns_boolean == True:
+            self.logger.debug("Basestation found in mDNS, setting IP Address and Hostname.")
+            self.storage.setItem("ip_addr", self.provider.mdns_services[self.arlo_device['deviceId']].get('address'))
+            self.storage.setItem("hostname", self.provider.mdns_services[self.arlo_device['deviceId']].get('server'))
         else:
             self.logger.error("Basestation not found in mDNS, manual input needed under basestation settings.")
 
