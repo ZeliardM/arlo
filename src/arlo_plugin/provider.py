@@ -202,7 +202,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         if interval is None:
             interval = 90
             self.storage.setItem("imap_mfa_interval", interval)
-        if interval < 30:
+        if int(interval) < 30:
             interval = 30
             self.storage.setItem("imap_mfa_interval", interval)
         return int(interval)
