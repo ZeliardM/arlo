@@ -1,5 +1,9 @@
 # Arlo Plugin for Scrypted
 
+**NOTE:** Due to recent changes in authentication timeouts on Arlo Cloud (~2 weeks down to ~2 hours), it is recommended to set up IMAP 2FA to reduce the number of manual logins required. The IMAP refresh interval has also be updated to **minutes** instead of **days**. Please modify your settings accordingly.
+
+## Introduction
+
 The Arlo Plugin connects Scrypted to Arlo Cloud, allowing you to access all of your Arlo cameras in Scrypted.
 
 With the changes for local streaming for cameras that support it, you must use your main Arlo account in the Scrypted plugin and it is highly recommended to create a dedicated Arlo account for use with the Arlo app or website and share your cameras from your main Arlo account, as Arlo only permits one active login to their servers per account. Using a separate dedicated Arlo account allows you to use the Arlo app or website simultaneously with this plugin, otherwise logging in from the plugin will log you out from all other devices.
