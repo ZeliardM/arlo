@@ -65,6 +65,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         self.imap = None
         self.imap_signal = None
         self.imap_skip_emails = None
+        self.manual_mfa_signal = None
         self.device_discovery_lock = asyncio.Lock()
 
         self.propagate_verbosity()
@@ -78,7 +79,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             if self.mfa_strategy == "IMAP":
                 self.initialize_imap()
             else:
-                _ = self.arlo
+                arlo_init = self.arlo
+                if arlo_init is not None:
+                    self.initialize_manual_mfa_loop()
 
         asyncio.get_event_loop().call_soon(load, self)
         self.create_task(self.onDeviceEvent(ScryptedInterface.Settings.value, None))
@@ -245,7 +248,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             one_location = False
             self.storage.setItem("one_location", one_location)
         return one_location
-    
+
     @property
     def mdns_services(self) -> dict:
         return self.storage.getItem("mdns_services")
@@ -309,7 +312,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 self.create_task(self.do_arlo_setup())
                 return self._arlo
             else:
-                self._arlo_mfa_complete_auth = self._arlo.LoginMFA()
+                self._arlo_mfa_complete_auth = self._arlo.LoginMFA(cookies=cookies)
                 if self._arlo_mfa_complete_auth is NO_MFA:
                     self.logger.info(f"Initialized Arlo client")
                     # go back to the top of the function to complete the login
@@ -348,6 +351,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
     def invalidate_arlo_client(self) -> None:
         if self._arlo is not None:
             self._arlo.Unsubscribe()
+        self.exit_manual_mfa()
         self._arlo = None
         self._arlo_mfa_code = None
         self._arlo_mfa_complete_auth = None
@@ -369,6 +373,58 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
     def propagate_transport(self) -> None:
         self.print(f"Setting plugin transport to {self.arlo_transport}")
         change_stream_class(self.arlo_transport)
+
+    def initialize_manual_mfa_loop(self) -> None:
+        self.exit_manual_mfa()
+        self.manual_mfa_signal = asyncio.Queue()
+        self.create_task(self.manual_mfa_loop())
+
+    async def manual_mfa_loop(self) -> None:
+        manual_mfa_signal = self.manual_mfa_signal
+        last_mfa = time.time()
+        self.logger.info(f"Starting manual refresh loop {id(manual_mfa_signal)}")
+        while True:
+            # continue by sleeping/waiting for a signal
+            # 60 minutes, +/- a random amount of time
+            interval = 60 * 60 + random.randint(-300, 300)
+            signal_task = asyncio.create_task(manual_mfa_signal.get())
+
+            # wait until either we receive a signal or the refresh interval expires
+            sleep_task = asyncio.create_task(asyncio.sleep(interval))
+            done, pending = await asyncio.wait([signal_task, sleep_task], return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+
+            done_task = done.pop()
+            if done_task is signal_task and done_task.result() is None:
+                # exit signal received
+                self.logger.info(f"Exiting manual refresh loop {id(manual_mfa_signal)}")
+                return
+
+            if time.time() - last_mfa > 14 * 24 * 60 * 60:
+                self.logger.info("Clearing cookies to force re-authentication")
+                self.storage.setItem("arlo_cookies", "")
+
+            self._arlo = None
+
+            try:
+                arlo_init = self.arlo
+            except Exception:
+                self.logger.exception("Unrecoverable login error")
+                self.logger.error("Will request a plugin restart")
+                await scrypted_sdk.deviceManager.requestRestart()
+                return
+
+            if arlo_init is None:
+                self.logger.info("Manual MFA token required")
+                return
+            else:
+                _ = self.arlo
+
+    def exit_manual_mfa(self) -> None:
+        if self.manual_mfa_signal:
+            self.manual_mfa_signal.put_nowait(None)
+        self.manual_mfa_signal = None
 
     def initialize_imap(self, try_count=1) -> None:
         if not self.imap_mfa_host or not self.imap_mfa_port or \
@@ -434,7 +490,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
             # clear cookies when it's time to refresh the MFA code
             if last_mfa is None or time.time() - last_mfa > self.imap_mfa_interval * 24 * 60 * 60:
+                self.logger.info("Clearing cookies to force re-authentication")
                 self.storage.setItem("arlo_cookies", "")
+            else:
+                self.logger.info("Will re-use existing cookies")
 
             # initialize login and prompt for MFA
             try:
@@ -545,9 +604,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             # 60 minutes, +/- a random amount of time
             interval = 60 * 60 + random.randint(-300, 300)
             signal_task = asyncio.create_task(imap_signal.get())
-            sleep_task = asyncio.create_task(asyncio.sleep(interval))
 
             # wait until either we receive a signal or the refresh interval expires
+            sleep_task = asyncio.create_task(asyncio.sleep(interval))
             done, pending = await asyncio.wait([signal_task, sleep_task], return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
                 task.cancel()
@@ -711,6 +770,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         skip_arlo_client = False
         if key == "arlo_mfa_code":
             self._arlo_mfa_code = value
+            self.initialize_manual_mfa_loop()
         elif key == "force_reauth":
             # force arlo client to be invalidated and reloaded
             self.invalidate_arlo_client()
@@ -1090,7 +1150,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             self.logger.error(f"Failed to fetch properties for {camera['deviceId'] if camera else basestation['deviceId']} after 3 attempts")
 
         return arlo_properties
-    
+
     async def mdns(self) -> None:
         self.logger.debug("Initializing mDNS Discovery for basestations.")
         try:
