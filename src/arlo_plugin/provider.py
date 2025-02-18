@@ -129,6 +129,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         return self.storage.getItem("arlo_auth_headers")
 
     @property
+    def arlo_cookies(self) -> str:
+        return self.storage.getItem("arlo_cookies")
+
+    @property
     def arlo_user_id(self) -> str:
         return self.storage.getItem("arlo_user_id")
 
@@ -265,6 +269,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 self._arlo_mfa_code = None
 
                 self.storage.setItem("arlo_auth_headers", json.dumps(dict(self._arlo.request.session.headers.items())))
+                self.storage.setItem("arlo_cookies", self._arlo.request.dumps_cookies())
                 self.storage.setItem("arlo_user_id", self._arlo.user_id)
 
                 self.create_task(self.do_arlo_setup())
@@ -281,6 +286,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 self.logger.info("Arlo MFA done")
 
                 self.storage.setItem("arlo_auth_headers", json.dumps(dict(self._arlo.request.session.headers.items())))
+                self.storage.setItem("arlo_cookies", self._arlo.request.dumps_cookies())
                 self.storage.setItem("arlo_user_id", self._arlo.user_id)
 
                 self.create_task(self.do_arlo_setup())
@@ -294,8 +300,9 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         try:
             self._arlo = Arlo(self.arlo_username, self.arlo_password, self.arlo_device_id)
             headers = self.arlo_auth_headers
-            if headers:
-                self._arlo.UseExistingAuth(self.arlo_user_id, json.loads(headers))
+            cookies = self.arlo_cookies
+            if headers and cookies:
+                self._arlo.UseExistingAuth(self.arlo_user_id, json.loads(headers), cookies)
                 self.logger.info(f"Initialized Arlo client, reusing stored auth headers")
                 self.create_task(self.do_arlo_setup())
                 return self._arlo
@@ -331,6 +338,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             self._arlo = None
             self._arlo_mfa_code = None
             self.storage.setItem("arlo_auth_headers", None)
+            self.storage.setItem("arlo_cookies", None)
             _ = self.arlo
         except Exception:
             self.logger.exception("Error logging in")
@@ -342,6 +350,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         self._arlo_mfa_code = None
         self._arlo_mfa_complete_auth = None
         self.storage.setItem("arlo_auth_headers", "")
+        self.storage.setItem("arlo_cookies", "")
         self.storage.setItem("arlo_user_id", "")
 
     def get_current_log_level(self) -> int:
@@ -410,6 +419,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             # save old client and details in case of error
             old_arlo = self._arlo
             old_headers = self.storage.getItem("arlo_auth_headers")
+            old_cookies = self.storage.getItem("arlo_cookies")
             old_user_id = self.storage.getItem("arlo_user_id")
 
             # clear everything
@@ -417,6 +427,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             self._arlo_mfa_code = None
             self._arlo_mfa_complete_auth = None
             self.storage.setItem("arlo_auth_headers", "")
+            self.storage.setItem("arlo_cookies", "")
             self.storage.setItem("arlo_user_id", "")
 
             # initialize login and prompt for MFA
@@ -499,6 +510,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
 
                     self._arlo = old_arlo
                     self.storage.setItem("arlo_auth_headers", old_headers)
+                    self.storage.setItem("arlo_cookies", old_cookies)
                     self.storage.setItem("arlo_user_id", old_user_id)
                     self._arlo_mfa_code = None
                     self._arlo_mfa_complete_auth = None

@@ -157,16 +157,17 @@ class Arlo(object):
         now = datetime.today()
         return trans_type+"!" + float2hex(random.random() * math.pow(2, 32)).lower() + "!" + str(int((time.mktime(now.timetuple())*1e3 + now.microsecond/1e3)))
 
-    def UseExistingAuth(self, user_id, headers):
+    def UseExistingAuth(self, user_id, headers, cookies):
         self.user_id = user_id
         headers['Content-Type'] = 'application/json; charset=UTF-8'
         headers['User-Agent'] = USER_AGENTS['linux']
         self.request = Request() #Request(mode="cloudscraper")
+        self.request.loads_cookies(cookies)
         self.request.session.headers.update(headers)
         self.BASE_URL = 'myapi.arlo.com'
         self.logged_in = True
 
-    def LoginMFA(self):
+    def LoginMFA(self, cookies=None):
         headers = {
             'DNT': '1',
             'schemaVersion': '1',
@@ -179,7 +180,10 @@ class Arlo(object):
             'x-user-device-id': self.device_id,
             'x-user-device-automation-name': 'QlJPV1NFUg==',
             'x-user-device-type': 'BROWSER',
+            "X-Service-Version": "3",
+            "Priority": "u=1, i",
             'Host': self.AUTH_URL,
+            'User-Agent': USER_AGENTS['linux'],
         }
 
         self.request = Request()
@@ -200,6 +204,9 @@ class Arlo(object):
 
             self.request = Request(mode="ip")
 
+        if cookies:
+            self.request.loads_cookies(cookies)
+
         # Authenticate
         self.request.options(f'https://{auth_host}/api/auth', headers=headers)
         auth_body = self.request.post(
@@ -211,93 +218,153 @@ class Arlo(object):
                 'EnvSource': 'prod'
             },
             headers=headers,
-            raw=True
+            raw=True,
+            skip_event_id=True,
         )
         self.user_id = auth_body['data']['userId']
 
         if auth_body['data'].get("MFA_State") != "DISABLED":
             self.request.session.headers.update({'Authorization': base64.b64encode(auth_body['data']['token'].encode('utf-8')).decode()})
 
-            # Retrieve MFA factor id
-            factors_body = self.request.get(
-                f'https://{auth_host}/api/getFactors',
-                params={'data': auth_body['data']['issued']},
+            # try trusted browser
+            browser_factor_body = self.request.post(
+                f"https://{auth_host}/api/getFactorId",
+                params={
+                    'factorData': '',
+                    'factorType': 'BROWSER',
+                    'userId': self.user_id
+                },
                 headers=headers,
-                raw=True
+                raw=True,
+                skip_event_id=True,
             )
 
-            logger.debug(factors_body['meta'])
+            logger.debug(browser_factor_body['meta'])
 
-            factorTypes = [i['factorType'] for i in factors_body['data']['items']]
-            factorRoles = [i['factorRole'] for i in factors_body['data']['items']]
-            factorDictKeys = [list(i.keys()) for i in factors_body['data']['items']]
-            logger.debug(f"factorTypes: {factorTypes}")
-            logger.debug(f"factorRoles: {factorRoles}")
-            logger.debug(f"factorDictKeys: {factorDictKeys}")
+            if browser_factor_body.get('meta', {}).get('code') != 200:
+                # need MFA
 
-            factor_id = next(
-                iter([
-                    i for i in factors_body['data']['items']
-                    if (i['factorType'] == 'EMAIL' or i['factorType'] == 'SMS')
-                    and i['factorRole'] == "PRIMARY"
-                ]),
-                {}
-            ).get('factorId')
-            if not factor_id:
-                raise Exception("Could not find valid 2FA method - is the primary 2FA set to either Email or SMS?")
-
-            # Start factor auth
-            start_auth_body = self.request.post(
-                f'https://{auth_host}/api/startAuth',
-                params={'factorId': factor_id},
-                headers=headers,
-                raw=True
-            )
-            factor_auth_code = start_auth_body['data']['factorAuthCode']
-
-            def complete_auth(code):
-                nonlocal self, factor_auth_code, headers
-
-                finish_auth_body = self.request.post(
-                    f'https://{auth_host}/api/finishAuth',
-                    params={
-                        'factorAuthCode': factor_auth_code,
-                        'otp': code,
-                        'isBrowserTrusted': True
-                    },
+                # Retrieve MFA factor id
+                factors_body = self.request.get(
+                    f'https://{auth_host}/api/getFactors',
+                    params={'data': auth_body['data']['issued']},
                     headers=headers,
-                    raw=True
+                    raw=True,
+                    skip_event_id=True,
                 )
 
-                if finish_auth_body.get('data', {}).get('token') is None:
-                    raise Exception("Could not complete 2FA, maybe invalid token? If the error persists, please try reloading the plugin and logging in again.")
+                logger.debug(factors_body['meta'])
 
-                self.request = Request() #Request(mode="cloudscraper")
+                factorTypes = [i['factorType'] for i in factors_body['data']['items']]
+                factorRoles = [i['factorRole'] for i in factors_body['data']['items']]
+                factorDictKeys = [list(i.keys()) for i in factors_body['data']['items']]
+                logger.debug(f"factorTypes: {factorTypes}")
+                logger.debug(f"factorRoles: {factorRoles}")
+                logger.debug(f"factorDictKeys: {factorDictKeys}")
 
-                # Update Authorization code with new code
-                headers = {
-                    'Auth-Version': '2',
-                    'Authorization': finish_auth_body['data']['token'],
-                    'User-Agent': USER_AGENTS['linux'],
-                    'Content-Type': 'application/json; charset=UTF-8',
-                }
-                self.request.session.headers.update(headers)
-                self.BASE_URL = 'myapi.arlo.com'
-                self.logged_in = True
+                factor_id = next(
+                    iter([
+                        i for i in factors_body['data']['items']
+                        if (i['factorType'] == 'EMAIL' or i['factorType'] == 'SMS')
+                        and i['factorRole'] == "PRIMARY"
+                    ]),
+                    {}
+                ).get('factorId')
+                if not factor_id:
+                    raise Exception("Could not find valid 2FA method - is the primary 2FA set to either Email or SMS?")
 
-            return complete_auth
-        else:
-            # MFA has been disabled
-            headers = {
-                'Auth-Version': '2',
-                'Authorization': auth_body['data']['token'],
-                'User-Agent': USER_AGENTS['linux'],
-                'Content-Type': 'application/json; charset=UTF-8',
-            }
-            self.request.session.headers.update(headers)
-            self.BASE_URL = 'myapi.arlo.com'
-            self.logged_in = True
-            return NO_MFA
+                # Start factor auth
+                start_auth_body = self.request.post(
+                    f'https://{auth_host}/api/startAuth',
+                    params={
+                        'factorId': factor_id,
+                        'factorType': 'BROWSER',
+                        'userId': self.user_id
+                    },
+                    headers=headers,
+                    raw=True,
+                    skip_event_id=True,
+                )
+                factor_auth_code = start_auth_body['data']['factorAuthCode']
+
+                def complete_auth(code):
+                    nonlocal self, factor_auth_code, headers
+
+                    finish_auth_body = self.request.post(
+                        f'https://{auth_host}/api/finishAuth',
+                        params={
+                            'factorAuthCode': factor_auth_code,
+                            'otp': code,
+                            'isBrowserTrusted': True
+                        },
+                        headers=headers,
+                        raw=True,
+                        skip_event_id=True,
+                    )
+
+                    if finish_auth_body.get('data', {}).get('token') is None:
+                        raise Exception("Could not complete 2FA, maybe invalid token? If the error persists, please try reloading the plugin and logging in again.")
+
+                    if finish_auth_body.get('data', {}).get('browserAuthCode') is None:
+                        raise Exception("Missing browser auth code!")
+
+                    headers['Authorization'] = base64.b64encode(finish_auth_body['data']['token'].encode('utf-8')).decode()
+
+                    validate_body = self.request.get(
+                        f"https://{auth_host}/api/validateAccessToken?data = {int(time.time())}",
+                        headers=headers,
+                        raw=True,
+                        skip_event_id=True
+                    )
+
+                    logger.debug(validate_body['meta'])
+
+                    browser_auth_code = finish_auth_body['data']['browserAuthCode']
+                    pair_browser_body = self.request.post(
+                        f'https://{auth_host}/api/startPairingFactor',
+                        params={
+                            'factorAuthCode': browser_auth_code,
+                            'factorData': '',
+                            'factorType': 'BROWSER'
+                        },
+                        headers=headers,
+                        raw=True,
+                        skip_event_id=True,
+                    )
+
+                    logger.debug(pair_browser_body['meta'])
+
+                    if pair_browser_body.get('meta', {}).get('code') != 200:
+                        raise Exception("Could not pair browser")
+
+                    cookies = self.request.dumps_cookies()
+                    self.request = Request() #Request(mode="cloudscraper")
+                    self.request.loads_cookies(cookies)
+
+                    # Update Authorization code with new code
+                    headers = {
+                        'Auth-Version': '2',
+                        'Authorization': finish_auth_body['data']['token'],
+                        'User-Agent': USER_AGENTS['linux'],
+                        'Content-Type': 'application/json; charset=UTF-8',
+                    }
+                    self.request.session.headers.update(headers)
+                    self.BASE_URL = 'myapi.arlo.com'
+                    self.logged_in = True
+
+                return complete_auth
+
+        # MFA disabled or trusted browser succeeded
+        headers = {
+            'Auth-Version': '2',
+            'Authorization': auth_body['data']['token'],
+            'User-Agent': USER_AGENTS['linux'],
+            'Content-Type': 'application/json; charset=UTF-8',
+        }
+        self.request.session.headers.update(headers)
+        self.BASE_URL = 'myapi.arlo.com'
+        self.logged_in = True
+        return NO_MFA
 
     def Logout(self):
         self.Unsubscribe()

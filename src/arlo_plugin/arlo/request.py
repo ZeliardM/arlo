@@ -19,6 +19,8 @@ from requests.exceptions import HTTPError
 from requests_toolbelt.adapters import host_header_ssl
 import cloudscraper
 from curl_cffi import requests as curl_cffi_requests
+import base64
+import pickle
 import time
 import uuid
 
@@ -34,6 +36,7 @@ class Request(object):
     """HTTP helper class"""
 
     def __init__(self, timeout=5, mode="curl"):
+        self.mode = mode
         if mode == "curl":
             logger.debug("HTTP helper using curl_cffi")
             self.session = curl_cffi_requests.Session(impersonate="chrome")
@@ -119,3 +122,13 @@ class Request(object):
 
     def options(self, url, **kwargs):
         return self._request(url, 'OPTIONS', **kwargs)
+
+    def dumps_cookies(self) -> str:
+        assert self.mode == "curl"
+        pickled = pickle.dumps(self.session.cookies.jar._cookies)
+        return base64.b64encode(pickled).decode()
+
+    def loads_cookies(self, cookies: str):
+        assert self.mode == "curl"
+        b64ed = base64.b64decode(cookies)
+        self.session.cookies.jar._cookies.update(pickle.loads(b64ed))
