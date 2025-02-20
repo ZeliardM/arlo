@@ -217,6 +217,26 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         return int(interval)
 
     @property
+    def imap_mfa_use_local_index(self) -> bool:
+        use_local_index = self.storage.getItem("imap_mfa_use_local_index")
+        if use_local_index is None:
+            use_local_index = False
+            self.storage.setItem("imap_mfa_use_local_index", use_local_index)
+        return use_local_index
+
+    @property
+    def last_mfa(self) -> int: # not exposed to settings
+        last_mfa = self.storage.getItem("last_mfa")
+        if last_mfa is None:
+            last_mfa = 0
+            self.storage.setItem("last_mfa", last_mfa)
+        return int(last_mfa)
+
+    @last_mfa.setter
+    def last_mfa(self, value: int):
+        self.storage.setItem("last_mfa", value)
+
+    @property
     def hidden_devices(self) -> List[str]:
         hidden = self.storage.getItem("hidden_devices")
         if hidden is None:
@@ -380,8 +400,10 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
         self.create_task(self.manual_mfa_loop())
 
     async def manual_mfa_loop(self) -> None:
+        max_duration = 14 * 24 * 60 * 60
         manual_mfa_signal = self.manual_mfa_signal
-        last_mfa = time.time()
+        if time.time() - self.last_mfa > max_duration:
+            self.last_mfa = time.time()
         self.logger.info(f"Starting manual refresh loop {id(manual_mfa_signal)}")
         while True:
             # continue by sleeping/waiting for a signal
@@ -401,7 +423,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 self.logger.info(f"Exiting manual refresh loop {id(manual_mfa_signal)}")
                 return
 
-            if time.time() - last_mfa > 14 * 24 * 60 * 60:
+            if time.time() - self.last_mfa > max_duration:
                 self.logger.info("Clearing cookies to force re-authentication")
                 self.storage.setItem("arlo_cookies", "")
 
@@ -445,7 +467,11 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 raise Exception(f"IMAP failed to fetch INBOX: {res}")
 
             # fetch existing arlo emails so we skip them going forward
-            res, self.imap_skip_emails = self.imap.search(None, "FROM", self.imap_mfa_sender)
+            self.imap.check()
+            if self.imap_mfa_use_local_index:
+                res, self.imap_skip_emails = self.imap.search(None, 'ALL')
+            else:
+                res, self.imap_skip_emails = self.imap.search(None, "FROM", self.imap_mfa_sender)
             if res.lower() != "ok":
                 raise Exception(f"IMAP failed to fetch old Arlo emails: {res}")
         except Exception:
@@ -471,7 +497,6 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
     async def imap_relogin_loop(self) -> None:
         imap_signal = self.imap_signal
         self.logger.info(f"Starting IMAP refresh loop {id(imap_signal)}")
-        last_mfa = None
         while True:
             self.logger.info("Performing IMAP login flow")
 
@@ -489,7 +514,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
             self.storage.setItem("arlo_user_id", "")
 
             # clear cookies when it's time to refresh the MFA code
-            if last_mfa is None or time.time() - last_mfa > self.imap_mfa_interval * 24 * 60 * 60:
+            if time.time() - self.last_mfa > self.imap_mfa_interval * 24 * 60 * 60:
                 self.logger.info("Clearing cookies to force re-authentication")
                 self.storage.setItem("arlo_cookies", "")
             else:
@@ -523,11 +548,15 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                         self.logger.info(f"Checking IMAP for MFA codes (attempt {try_count})")
 
                         self.imap.check()
-                        res, emails = self.imap.search(None, "FROM", self.imap_mfa_sender)
+                        use_local_index = self.imap_mfa_use_local_index
+                        if use_local_index:
+                            res, emails = self.imap.search(None, 'ALL')
+                        else:
+                            res, emails = self.imap.search(None, "FROM", self.imap_mfa_sender)
                         if res.lower() != "ok":
                             raise Exception("IMAP error: {res}")
 
-                        if emails == self.imap_skip_emails:
+                        if not emails or emails == self.imap_skip_emails:
                             self.logger.info("No new emails found, will sleep and retry")
                             await asyncio.sleep(sleep_duration)
                             continue
@@ -536,6 +565,13 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                         def search_email(msg_id):
                             if msg_id in skip_emails:
                                 return None
+
+                            if use_local_index:
+                                res, data = self.imap.fetch(msg_id, '(BODY[HEADER.FIELDS (FROM)])')
+                                if res.lower() != "ok":
+                                    raise Exception("IMAP error: {res}")
+                                if self.imap_mfa_sender not in data[0][1].decode('utf-8'):
+                                    return None
 
                             res, msg = self.imap.fetch(msg_id, "(BODY.PEEK[])")
                             if res.lower() != "ok":
@@ -595,7 +631,7 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                         await scrypted_sdk.deviceManager.requestRestart()
                         return
 
-                    last_mfa = time.time()
+                    self.last_mfa = time.time()
             else:
                 # MFA disabled
                 _ = self.arlo
@@ -696,12 +732,22 @@ class ArloProvider(ScryptedDeviceBase, Settings, DeviceProvider, ScryptedDeviceL
                 {
                     "group": "IMAP 2FA",
                     "key": "imap_mfa_interval",
-                    "title": "Refresh Login Interval",
-                    "description": "Interval, in days, to refresh the login session to Arlo Cloud. "
+                    "title": "Refresh MFA Interval",
+                    "description": "Interval, in days, to refresh the MFA login session to Arlo Cloud. "
                                    "Must be a value greater than 0 and less than 14.",
                     "type": "number",
                     "value": self.imap_mfa_interval,
-                }
+                },
+                {
+                    "group": "IMAP 2FA",
+                    "key": "imap_mfa_use_local_index",
+                    "title": "Search Emails Locally",
+                    "description": "Enable this option to fetch all emails and search for 2FA codes locally. "
+                                   "This is useful when the IMAP server does not support searching for emails, or takes too long "
+                                   "to index new emails.",
+                    "value": self.imap_mfa_use_local_index,
+                    "type": "boolean",
+                },
             ])
 
         results.extend([
